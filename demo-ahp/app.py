@@ -179,6 +179,7 @@ def get_alternative_scores():
     conn.close()
     return jsonify({"alternative_scores": [{"alternative_name": row[0], "score": row[1]} for row in rows]})
 
+ 
 @app.route('/get-final-alternative-scores', methods=['GET'])
 def get_final_alternative_scores():
     try:
@@ -209,6 +210,17 @@ def get_final_alternative_scores():
             for alt_id, score in rows:
                 final_scores[alt_id] += score * weight
 
+        # Lưu điểm vào bảng final_alternative_scores
+        for alt_id, score in final_scores.items():
+            cursor.execute("""
+                INSERT INTO final_alternative_scores (alternative_id, final_score)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE final_score = %s
+            """, (alt_id, round(score, 4), round(score, 4)))
+
+        # Commit các thay đổi
+        conn.commit()
+
         # Chuẩn bị dữ liệu trả về
         result = []
         for alt_id, score in final_scores.items():
@@ -222,6 +234,7 @@ def get_final_alternative_scores():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 # ---------------- Run app ----------------
 if __name__ == '__main__':
