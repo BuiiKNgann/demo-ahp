@@ -42,7 +42,7 @@ const ExpertSelection = ({ onExpertSelect }) => {
   }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md">
+    <div className="bg-white p-6 rounded-lg shadow-md w-full">
       <h2 className="text-xl font-semibold mb-4">Chọn chuyên gia</h2>
       <div className="mb-4">
         <label

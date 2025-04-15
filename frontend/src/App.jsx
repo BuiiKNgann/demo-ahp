@@ -60,14 +60,11 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-100 py-8">
-      <div className="container mx-auto px-4 max-w-5xl">
+      <div className="container mx-auto px-4 w-full">
         <header className="mb-8 text-center">
           <h1 className="text-3xl font-bold text-gray-800">
             Hệ thống hỗ trợ ra quyết định AHP
           </h1>
-          <p className="mt-2 text-gray-600">
-            Phân tích thứ bậc (Analytic Hierarchy Process)
-          </p>
         </header>
 
         <main>
@@ -107,9 +104,9 @@ function App() {
           )}
         </main>
 
-        <footer className="mt-12 text-center text-gray-500 text-sm">
+        {/* <footer className="mt-12 text-center text-gray-500 text-sm">
           <p>© 2025 Hệ thống ra quyết định AHP</p>
-        </footer>
+        </footer> */}
       </div>
     </div>
   );

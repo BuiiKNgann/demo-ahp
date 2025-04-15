@@ -3,14 +3,6 @@ import { getAlternatives, calculateAlternativeScores } from "../services/api";
 
 const dropdownOptions = [
   { label: "1", value: 1 },
-  { label: "1/2", value: 0.5 },
-  { label: "1/3", value: 1 / 3 },
-  { label: "1/4", value: 1 / 4 },
-  { label: "1/5", value: 1 / 5 },
-  { label: "1/6", value: 1 / 6 },
-  { label: "1/7", value: 1 / 7 },
-  { label: "1/8", value: 1 / 8 },
-  { label: "1/9", value: 1 / 9 },
   { label: "2", value: 2 },
   { label: "3", value: 3 },
   { label: "4", value: 4 },
@@ -19,7 +11,46 @@ const dropdownOptions = [
   { label: "7", value: 7 },
   { label: "8", value: 8 },
   { label: "9", value: 9 },
+  { label: "1/2", value: 0.5 },
+  { label: "1/3", value: 1 / 3 },
+  { label: "1/4", value: 1 / 4 },
+  { label: "1/5", value: 1 / 5 },
+  { label: "1/6", value: 1 / 6 },
+  { label: "1/7", value: 1 / 7 },
+  { label: "1/8", value: 1 / 8 },
+  { label: "1/9", value: 1 / 9 },
 ];
+
+// Hàm để định dạng lại tên phương án
+const formatAlternativeName = (name) => {
+  if (!name) return "";
+
+  // Kiểm tra nếu tên là dạng "A1", "A2", v.v. thì đổi thành "Khách hàng A", "Khách hàng B", v.v.
+  const match = name.match(/^A(\d+)$/);
+  if (match) {
+    const number = parseInt(match[1]);
+    // Chuyển đổi số thành chữ cái (1->A, 2->B, ...)
+    const letter = String.fromCharCode(64 + number); // 65 là mã ASCII của 'A'
+    return `Khách hàng ${letter}`;
+  }
+
+  return name; // Trả về tên gốc nếu không phải dạng A1, A2...
+};
+
+// Hàm để định dạng tên từ key kết quả
+const formatResultKey = (key) => {
+  if (!key) return "";
+
+  // Kiểm tra nếu key là dạng "A1", "A2", v.v.
+  const match = key.match(/^A(\d+)$/);
+  if (match) {
+    const number = parseInt(match[1]);
+    const letter = String.fromCharCode(64 + number); // 65 là mã ASCII của 'A'
+    return `Khách hàng ${letter}`;
+  }
+
+  return key;
+};
 
 const AlternativeMatrix = ({
   expertId,
@@ -34,6 +65,19 @@ const AlternativeMatrix = ({
   const [calculating, setCalculating] = useState(false);
   const [error, setError] = useState(null);
   const [results, setResults] = useState(null);
+
+  const decimalToFormattedString = (decimal) => {
+    const reciprocal = 1 / decimal;
+    const tolerance = 1.0e-6;
+
+    for (let i = 1; i <= 9; i++) {
+      if (Math.abs(decimal - i) < tolerance) return i.toString(); // 1 -> 9
+      if (Math.abs(reciprocal - i) < tolerance) return `1/${i}`; // Hiển thị dạng 1/2, 1/3, ...
+    }
+
+    // Nếu không khớp với các giá trị AHP tiêu chuẩn, hiển thị dạng số thập phân
+    return decimal.toFixed(2);
+  };
 
   useEffect(() => {
     const fetchAlternatives = async () => {
@@ -103,11 +147,7 @@ const AlternativeMatrix = ({
   }
 
   return (
-    <div
-      className={`bg-white p-5 rounded-lg shadow-md mt-4 ${
-        disabled ? "opacity-50" : ""
-      }`}
-    >
+    <div className="bg-white p-5 rounded-lg shadow-md mt-4">
       <h3 className="text-lg font-semibold mb-3">
         Ma trận so sánh phương án theo tiêu chí: {criteriaName}
       </h3>
@@ -122,7 +162,7 @@ const AlternativeMatrix = ({
                   key={alternative.id}
                   className="py-2 px-3 border-b border-r border-gray-300"
                 >
-                  {alternative.name}
+                  {formatAlternativeName(alternative.name)}
                 </th>
               ))}
             </tr>
@@ -131,7 +171,7 @@ const AlternativeMatrix = ({
             {alternatives.map((rowAlternative, rowIndex) => (
               <tr key={rowAlternative.id}>
                 <td className="py-2 px-3 border-b border-r border-gray-300 font-medium">
-                  {rowAlternative.name}
+                  {formatAlternativeName(rowAlternative.name)}
                 </td>
                 {alternatives.map((colAlternative, colIndex) => (
                   <td
@@ -165,8 +205,8 @@ const AlternativeMatrix = ({
                     ) : (
                       <span className="text-center block text-gray-500">
                         {matrix[rowIndex][colIndex]
-                          ? Number(matrix[rowIndex][colIndex]).toFixed(2)
-                          : "0.00"}
+                          ? decimalToFormattedString(matrix[rowIndex][colIndex])
+                          : "0"}
                       </span>
                     )}
                   </td>
@@ -180,7 +220,7 @@ const AlternativeMatrix = ({
       <div className="mt-3 flex justify-end">
         <button
           onClick={handleCalculate}
-          disabled={disabled || calculating}
+          disabled={calculating}
           className="bg-blue-500 hover:bg-blue-600 text-white py-1.5 px-4 rounded-md disabled:bg-gray-400"
         >
           {calculating ? "Đang tính..." : "Tính điểm phương án"}
@@ -194,12 +234,24 @@ const AlternativeMatrix = ({
           </h4>
           <ul className="space-y-1">
             {Object.entries(results.scores).map(([alternativeId, score]) => {
-              const alternativeName =
-                alternatives.find((a) => a.id === parseInt(alternativeId))
-                  ?.name || alternativeId;
+              // Tìm phương án tương ứng trong danh sách alternatives
+              const alternative = alternatives.find(
+                (a) => a.id === parseInt(alternativeId)
+              );
+
+              let displayName;
+              if (alternative) {
+                // Nếu tìm thấy alternative trong danh sách, sử dụng hàm định dạng
+                displayName = formatAlternativeName(alternative.name);
+              } else {
+                // Nếu không tìm thấy trong danh sách (có thể là key trực tiếp như "A1", "A2"),
+                // thì định dạng trực tiếp key đó
+                displayName = formatResultKey(alternativeId);
+              }
+
               return (
                 <li key={alternativeId} className="flex justify-between">
-                  <span>{alternativeName}:</span>
+                  <span>{displayName}:</span>
                   <span className="font-medium">{score.toFixed(4)}</span>
                 </li>
               );

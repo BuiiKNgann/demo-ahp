@@ -235,7 +235,6 @@ def get_final_alternative_scores():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 # ---------------- Run app ----------------
 if __name__ == '__main__':
     app.run(debug=True)

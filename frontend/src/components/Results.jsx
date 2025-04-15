@@ -29,7 +29,7 @@ const Results = () => {
   }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md mt-6">
+    <div className="bg-white p-6 rounded-lg shadow-md w-full">
       <h2 className="text-xl font-semibold mb-4">Kết quả cuối cùng</h2>
 
       <table className="min-w-full bg-white border border-gray-300">
