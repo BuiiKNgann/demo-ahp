@@ -8,6 +8,7 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
   const [calculating, setCalculating] = useState(false);
   const [error, setError] = useState(null);
   const [results, setResults] = useState(null);
+  const [consistencyError, setConsistencyError] = useState(null);
 
   const dropdownOptions = [
     1,
@@ -121,6 +122,8 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
     }
 
     setMatrix(newMatrix);
+    // Clear consistency error when matrix changes
+    setConsistencyError(null);
   };
 
   const handleCalculate = async () => {
@@ -146,12 +149,36 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
     try {
       setCalculating(true);
       setError(null);
+      setConsistencyError(null);
       const result = await calculateCriteriaWeights(expertId, matrix);
       setResults(result);
-      onWeightsCalculated(result);
+
+      // Check if CR > 0.1 (10%)
+      if (result.CR > 0.1) {
+        setConsistencyError(
+          `Tỷ số nhất quán (CR = ${result.CR.toFixed(
+            4
+          )}) vượt quá 10%. Ma trận không nhất quán, vui lòng điều chỉnh lại giá trị so sánh.`
+        );
+      } else {
+        onWeightsCalculated(result);
+      }
+
       setCalculating(false);
     } catch (err) {
-      setError("Lỗi khi tính toán trọng số tiêu chí");
+      // Check if the error contains a message about CR exceeding 10%
+      if (
+        err.response &&
+        err.response.data &&
+        err.response.data.message &&
+        err.response.data.message.includes("Consistency Ratio")
+      ) {
+        setConsistencyError(
+          `Tỷ số nhất quán (CR) vượt quá 10%. Ma trận không nhất quán, vui lòng điều chỉnh lại giá trị so sánh.`
+        );
+      } else {
+        setError("Lỗi khi tính toán trọng số tiêu chí");
+      }
       setCalculating(false);
     }
   };
@@ -185,6 +212,16 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
           quan trọng kém hơn.
         </p>
       </div>
+
+      {/* Consistency Error Alert */}
+      {consistencyError && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-300 rounded-md">
+          <h3 className="font-medium text-red-800 mb-1">
+            Cảnh báo độ nhất quán:
+          </h3>
+          <p className="text-red-700">{consistencyError}</p>
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="min-w-full bg-white border border-gray-300">
@@ -259,7 +296,7 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
         </button>
       </div>
 
-      {results && (
+      {results && !consistencyError && (
         <div className="mt-6 p-4 bg-gray-50 rounded-md">
           <h3 className="text-lg font-medium mb-2">
             Kết quả trọng số tiêu chí:
@@ -280,6 +317,18 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
               );
             })}
           </ul>
+          <div className="mt-3 pt-3 border-t border-gray-200">
+            <div className="flex justify-between">
+              <span>Tỷ số nhất quán (CR):</span>
+              <span
+                className={`font-medium ${
+                  results.CR > 0.1 ? "text-red-600" : "text-green-600"
+                }`}
+              >
+                {results.CR.toFixed(4)}
+              </span>
+            </div>
+          </div>
         </div>
       )}
     </div>
