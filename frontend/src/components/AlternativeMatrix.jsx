@@ -1,197 +1,265 @@
 import { useState, useEffect } from "react";
-import { getAlternatives, calculateAlternativeScores } from "../services/api";
-
-const dropdownOptions = [
-  { label: "1", value: 1 },
-  { label: "2", value: 2 },
-  { label: "3", value: 3 },
-  { label: "4", value: 4 },
-  { label: "5", value: 5 },
-  { label: "6", value: 6 },
-  { label: "7", value: 7 },
-  { label: "8", value: 8 },
-  { label: "9", value: 9 },
-  { label: "1/2", value: 1 / 2 },
-  { label: "1/3", value: 1 / 3 },
-  { label: "1/4", value: 1 / 4 },
-  { label: "1/5", value: 1 / 5 },
-  { label: "1/6", value: 1 / 6 },
-  { label: "1/7", value: 1 / 7 },
-  { label: "1/8", value: 1 / 8 },
-  { label: "1/9", value: 1 / 9 },
-];
-
-const formatAlternativeName = (name) => {
-  if (!name) return "";
-  const match = name.match(/^A(\d+)$/);
-  if (match) {
-    const number = parseInt(match[1]);
-    const letter = String.fromCharCode(64 + number);
-    return `Khách hàng ${letter}`;
-  }
-  return name;
-};
-
-const formatResultKey = (key) => {
-  if (!key) return "";
-  const match = key.match(/^A(\d+)$/);
-  if (match) {
-    const number = parseInt(match[1]);
-    const letter = String.fromCharCode(64 + number);
-    return `Khách hàng ${letter}`;
-  }
-  return key;
-};
+import { calculateAlternativeScores } from "../services/api";
 
 const AlternativeMatrix = ({
   expertId,
+  customerId,
   criteriaId,
   criteriaName,
+  customers,
   onScoresCalculated,
+  disabled,
 }) => {
-  const [alternatives, setAlternatives] = useState([]);
   const [matrix, setMatrix] = useState([]);
   const [loading, setLoading] = useState(true);
   const [calculating, setCalculating] = useState(false);
   const [error, setError] = useState(null);
   const [results, setResults] = useState(null);
-  const [consistencyRatio, setConsistencyRatio] = useState(null);
+  const [consistencyError, setConsistencyError] = useState(null);
 
-  const decimalToFormattedString = (decimal) => {
-    const reciprocal = 1 / decimal;
-    const tolerance = 1.0e-6;
+  const dropdownOptions = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    1 / 2,
+    1 / 3,
+    1 / 4,
+    1 / 5,
+    1 / 6,
+    1 / 7,
+    1 / 8,
+    1 / 9,
+  ];
 
-    for (let i = 1; i <= 9; i++) {
-      if (Math.abs(decimal - i) < tolerance) return i.toString();
-      if (Math.abs(reciprocal - i) < tolerance) return `1/${i}`;
-    }
-    return decimal.toFixed(2);
+  const formatValue = (value) => {
+    if (!value) return "";
+    const fractionMap = {
+      0.5: "1/2",
+      0.3333333333333333: "1/3",
+      0.25: "1/4",
+      0.2: "1/5",
+      0.16666666666666666: "1/6",
+      0.14285714285714285: "1/7",
+      0.125: "1/8",
+      0.1111111111111111: "1/9",
+    };
+    return fractionMap[value] || value.toString();
   };
 
   useEffect(() => {
-    const fetchAlternatives = async () => {
-      try {
-        setLoading(true);
-        const data = await getAlternatives();
-        setAlternatives(data);
-        const size = data.length;
-        const initialMatrix = Array(size)
-          .fill()
-          .map((_, i) =>
+    if (customers && customers.length > 0) {
+      const size = customers.length;
+      const initialMatrix = Array(size)
+        .fill()
+        .map(
+          (_, i) =>
             Array(size)
               .fill()
-              .map((_, j) => (i === j ? 1 : 0))
-          );
-        setMatrix(initialMatrix);
-      } catch {
-        setError("Không thể tải danh sách phương án");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (expertId && criteriaId) fetchAlternatives();
-  }, [expertId, criteriaId]);
+              .map((_, j) => (i === j ? 1 : 0)) // Khởi tạo mặc định là 0 cho các ô không phải đường chéo
+        );
+      setMatrix(initialMatrix);
+      setLoading(false);
+    }
+  }, [customers]);
 
   const handleMatrixChange = (rowIndex, colIndex, value) => {
     const newMatrix = [...matrix];
-    newMatrix[rowIndex][colIndex] = value;
-    if (rowIndex !== colIndex) {
-      newMatrix[colIndex][rowIndex] = 1 / value;
+    const parsedValue = parseFloat(value);
+
+    if (!isNaN(parsedValue) && parsedValue > 0 && parsedValue <= 9) {
+      newMatrix[rowIndex][colIndex] = parsedValue;
+      if (rowIndex !== colIndex) {
+        newMatrix[colIndex][rowIndex] = 1 / parsedValue;
+      }
+      setMatrix(newMatrix);
+      setConsistencyError(null);
+      setError(null);
+    } else {
+      newMatrix[rowIndex][colIndex] = 0;
+      if (rowIndex !== colIndex) {
+        newMatrix[colIndex][rowIndex] = 0;
+      }
+      setMatrix(newMatrix);
+      setError("Vui lòng nhập giá trị hợp lệ (số dương từ 1/9 đến 9)");
     }
-    setMatrix(newMatrix);
   };
 
   const handleCalculate = async () => {
+    if (!customerId || !expertId || !criteriaId) {
+      setError("Vui lòng đảm bảo đã chọn khách hàng, chuyên gia và tiêu chí");
+      return;
+    }
+
+    const size = customers.length;
+    let isComplete = true;
+
+    for (let i = 0; i < size; i++) {
+      for (let j = 0; j < size; j++) {
+        if (
+          i !== j &&
+          (matrix[i][j] <= 0 ||
+            matrix[i][j] === undefined ||
+            isNaN(matrix[i][j]))
+        ) {
+          isComplete = false;
+          break;
+        }
+      }
+      if (!isComplete) break;
+    }
+
+    if (!isComplete) {
+      setError("Vui lòng điền đầy đủ giá trị hợp lệ cho ma trận so sánh");
+      return;
+    }
+
     try {
       setCalculating(true);
-      const result = await calculateAlternativeScores(
-        expertId,
-        criteriaId,
-        matrix
-      );
-      const cr = result.cr;
+      setError(null);
+      setConsistencyError(null);
 
-      setConsistencyRatio(cr);
-      if (cr >= 0.1) {
-        setError("Ma trận không nhất quán (CR > 0.1). Hãy điều chỉnh lại.");
-        setResults(null);
-        setCalculating(false);
-        return;
+      const comparisons = [];
+      for (let i = 0; i < size; i++) {
+        for (let j = i + 1; j < size; j++) {
+          if (matrix[i][j] !== 1) {
+            comparisons.push({
+              alt1_id: customers[i].id,
+              alt2_id: customers[j].id,
+              value: matrix[i][j],
+            });
+          }
+        }
       }
 
+      const payload = {
+        expert_id: expertId,
+        customer_id: customerId,
+        criteria_id: criteriaId,
+        comparisons: comparisons,
+      };
+      console.log("Sending payload:", payload);
+
+      const result = await calculateAlternativeScores(payload);
       setResults(result);
-      onScoresCalculated(criteriaId, result);
-      setError(null);
+
+      if (result.CR > 0.1) {
+        setConsistencyError(
+          `Tỷ số nhất quán (CR = ${result.CR.toFixed(
+            4
+          )}) vượt quá 10%. Vui lòng điều chỉnh lại ma trận.`
+        );
+      } else {
+        onScoresCalculated(criteriaId, result);
+      }
+      setCalculating(false);
     } catch (err) {
-      console.log(err);
-      setError("Lỗi khi tính toán điểm số phương án");
-    } finally {
+      console.error("API Error:", err);
+      let errorMessage = "Lỗi không xác định";
+      if (err.response && err.response.data) {
+        errorMessage =
+          err.response.data.error ||
+          err.response.data.message ||
+          "Lỗi từ server";
+        if (errorMessage.includes("foreign key constraint fails")) {
+          errorMessage =
+            "Một hoặc nhiều ID khách hàng không hợp lệ. Vui lòng kiểm tra dữ liệu khách hàng.";
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      setError(`Lỗi khi tính toán điểm số: ${errorMessage}`);
       setCalculating(false);
     }
   };
 
   if (loading) {
-    return <div className="py-6 text-center">Đang tải phương án...</div>;
+    return (
+      <div className="flex justify-center items-center py-10">Đang tải...</div>
+    );
   }
 
-  if (error && !results) {
-    return <div className="text-red-600 py-4">{error}</div>;
+  if (error) {
+    return <div className="text-red-500 py-4">{error}</div>;
   }
 
   return (
-    <div className="bg-white p-5 rounded-lg shadow mt-4">
-      <h3 className="text-lg font-semibold mb-3">
-        Ma trận so sánh phương án theo tiêu chí: {criteriaName}
+    <div className="bg-white p-6 rounded-lg shadow-md w-full mb-6">
+      <h3 className="text-lg font-medium mb-4">
+        Ma trận so sánh cặp khách hàng theo tiêu chí: {criteriaName}
       </h3>
+      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
+        <p className="text-blue-700">
+          So sánh tầm quan trọng tương đối của các khách hàng theo tiêu chí{" "}
+          {criteriaName}. Giá trị từ 1 đến 9 thể hiện mức độ quan trọng hơn, giá
+          trị từ 1/9 đến 1 thể hiện mức độ quan trọng kém hơn.
+        </p>
+      </div>
+
+      {consistencyError && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-300 rounded-md">
+          <p className="text-red-700">{consistencyError}</p>
+        </div>
+      )}
 
       <div className="overflow-x-auto">
-        <table className="min-w-full border border-gray-300 bg-white">
+        <table className="min-w-full bg-white border border-gray-300">
           <thead>
             <tr>
-              <th className="border px-3 py-2"></th>
-              {alternatives.map((alt) => (
-                <th key={alt.id} className="border px-3 py-2">
-                  {formatAlternativeName(alt.name)}
+              <th className="py-2 px-4 border-b border-r"></th>
+              {customers.map((customer) => (
+                <th
+                  key={customer.id}
+                  className="py-2 px-4 border-b border-r border-gray-300"
+                >
+                  {customer.name}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {alternatives.map((rowAlt, rowIndex) => (
-              <tr key={rowAlt.id}>
-                <td className="border px-3 py-2 font-medium">
-                  {formatAlternativeName(rowAlt.name)}
+            {customers.map((rowCustomer, rowIndex) => (
+              <tr key={rowCustomer.id}>
+                <td className="py-2 px-4 border-b border-r font-medium">
+                  {rowCustomer.name}
                 </td>
-                {alternatives.map((colAlt, colIndex) => (
-                  <td key={colAlt.id} className="border px-2 py-1">
+                {customers.map((colCustomer, colIndex) => (
+                  <td
+                    key={colCustomer.id}
+                    className="py-2 px-4 border-b border-r border-gray-300"
+                  >
                     {rowIndex === colIndex ? (
                       <span className="text-center block">1</span>
                     ) : rowIndex < colIndex ? (
                       <select
-                        className="w-full px-1 py-1 border rounded"
                         value={matrix[rowIndex][colIndex] || ""}
                         onChange={(e) =>
-                          handleMatrixChange(
-                            rowIndex,
-                            colIndex,
-                            parseFloat(e.target.value)
-                          )
+                          handleMatrixChange(rowIndex, colIndex, e.target.value)
                         }
-                        disabled={consistencyRatio >= 0.1}
+                        disabled={disabled}
+                        className={`w-full px-2 py-1 border rounded ${
+                          !matrix[rowIndex][colIndex]
+                            ? "border-red-300 bg-red-50"
+                            : "border-gray-300"
+                        }`}
                       >
-                        <option value="" disabled>
-                          Chọn giá trị
-                        </option>
+                        <option value="">Chọn giá trị</option>
                         {dropdownOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
+                          <option key={option} value={option}>
+                            {formatValue(option)}
                           </option>
                         ))}
                       </select>
                     ) : (
                       <span className="text-center block text-gray-500">
-                        {decimalToFormattedString(matrix[rowIndex][colIndex])}
+                        {matrix[colIndex][rowIndex]
+                          ? formatValue(1 / matrix[colIndex][rowIndex])
+                          : "0"}
                       </span>
                     )}
                   </td>
@@ -202,56 +270,42 @@ const AlternativeMatrix = ({
         </table>
       </div>
 
-      <div className="mt-3 flex justify-end">
+      <div className="mt-4 flex justify-end">
         <button
           onClick={handleCalculate}
-          disabled={calculating}
-          className="bg-blue-500 hover:bg-blue-600 text-white py-1.5 px-4 rounded disabled:bg-gray-400"
+          disabled={calculating || disabled}
+          className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md disabled:bg-gray-400"
         >
-          {calculating ? "Đang tính..." : "Tính điểm phương án"}
+          {calculating ? "Đang tính..." : "Tính điểm số"}
         </button>
       </div>
 
-      {consistencyRatio !== null && (
-        <div className="mt-3 text-sm">
-          <p>
-            <strong>Chỉ số nhất quán (CR):</strong>{" "}
-            <span
-              className={
-                consistencyRatio < 0.1 ? "text-green-600" : "text-red-600"
-              }
-            >
-              {typeof consistencyRatio === "number"
-                ? consistencyRatio.toFixed(4)
-                : "Không xác định"}
-            </span>
-          </p>
-          {consistencyRatio >= 0.1 && (
-            <p className="text-red-600 mt-1">
-              ⚠️ CR quá cao (&gt; 0.1), ma trận không nhất quán. Vui lòng điều
-              chỉnh lại các giá trị so sánh.
-            </p>
-          )}
-        </div>
-      )}
-
-      {results && (
-        <div className="mt-4 p-3 bg-gray-100 rounded">
-          <h4 className="font-medium mb-2">Kết quả điểm số phương án:</h4>
-          <ul>
-            {Object.entries(results.scores).map(([altId, score]) => {
-              const alt = alternatives.find((a) => a.id === parseInt(altId));
-              const displayName = alt
-                ? formatAlternativeName(alt.name)
-                : formatResultKey(altId);
+      {results && !consistencyError && (
+        <div className="mt-6 p-4 bg-gray-50 rounded-md">
+          <h4 className="text-md font-medium mb-2">Kết quả điểm số:</h4>
+          <ul className="space-y-1">
+            {customers.map((customer) => {
+              const score = results.scores[customer.id] || 0;
               return (
-                <li key={altId} className="flex justify-between">
-                  <span>{displayName}:</span>
-                  <span className="font-semibold">{score.toFixed(4)}</span>
+                <li key={customer.id} className="flex justify-between">
+                  <span>{customer.name}:</span>
+                  <span className="font-medium">{score.toFixed(4)}</span>
                 </li>
               );
             })}
           </ul>
+          <div className="mt-3 pt-3 border-t border-gray-200">
+            <div className="flex justify-between">
+              <span>Tỷ số nhất quán (CR):</span>
+              <span
+                className={`font-medium ${
+                  results.CR > 0.1 ? "text-red-600" : "text-green-600"
+                }`}
+              >
+                {results.CR.toFixed(4)}
+              </span>
+            </div>
+          </div>
         </div>
       )}
     </div>

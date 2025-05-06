@@ -1,7 +1,12 @@
 import { useState, useEffect } from "react";
 import { getCriteria, calculateCriteriaWeights } from "../services/api";
 
-const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
+const CriteriaMatrix = ({
+  onWeightsCalculated,
+  disabled,
+  customerId,
+  expertId,
+}) => {
   const [criteria, setCriteria] = useState([]);
   const [matrix, setMatrix] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -9,6 +14,7 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
   const [error, setError] = useState(null);
   const [results, setResults] = useState(null);
   const [consistencyError, setConsistencyError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState("");
 
   const dropdownOptions = [
     1,
@@ -47,17 +53,15 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
     const tolerance = 1.0e-6;
 
     for (let i = 1; i <= 9; i++) {
-      if (Math.abs(decimal - i) < tolerance) return i.toString(); // 1 -> 9
-      if (Math.abs(reciprocal - i) < tolerance) return `1/${i}`; // Corrected to display proper format 1/2, 1/3...
+      if (Math.abs(decimal - i) < tolerance) return i.toString();
+      if (Math.abs(reciprocal - i) < tolerance) return `1/${i}`;
     }
 
-    // If no match, return as fraction
     let h1 = 1,
       h2 = 0,
       k1 = 0,
       k2 = 1,
       b = decimal;
-
     do {
       const a = Math.floor(b);
       let temp = h1;
@@ -92,18 +96,16 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
         setLoading(false);
       } catch (err) {
         setError("Không thể tải danh sách tiêu chí");
+        console.error("Error fetching criteria:", err);
         setLoading(false);
       }
     };
 
-    if (expertId) {
-      fetchCriteria();
-    }
-  }, [expertId]);
+    fetchCriteria();
+  }, []);
 
   const handleMatrixChange = (rowIndex, colIndex, value) => {
     const newMatrix = [...matrix];
-    // Fix: Handle string values properly
     const parsedValue =
       typeof value === "string" && value.includes("/")
         ? eval(value)
@@ -122,18 +124,27 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
     }
 
     setMatrix(newMatrix);
-    // Clear consistency error when matrix changes
     setConsistencyError(null);
   };
 
   const handleCalculate = async () => {
-    // Validate if all matrix values are filled
+    // Check if we need to validate customerId and expertId
+    if (
+      (customerId === undefined || expertId === undefined) &&
+      (customerId || expertId)
+    ) {
+      setError(
+        "Vui lòng chọn chuyên gia và khách hàng trước khi tính trọng số"
+      );
+      return;
+    }
+
     const size = criteria.length;
     let isComplete = true;
 
     for (let i = 0; i < size; i++) {
       for (let j = 0; j < size; j++) {
-        if (i !== j && (matrix[i][j] === 0 || matrix[i][j] === undefined)) {
+        if (i !== j && (matrix[i][j] <= 0 || matrix[i][j] === undefined)) {
           isComplete = false;
           break;
         }
@@ -150,10 +161,17 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
       setCalculating(true);
       setError(null);
       setConsistencyError(null);
-      const result = await calculateCriteriaWeights(expertId, matrix);
-      setResults(result);
+      setSuccessMessage("");
 
-      // Check if CR > 0.1 (10%)
+      const result = await calculateCriteriaWeights({
+        comparison_matrix: matrix,
+        customer_id: customerId || null,
+        expert_id: expertId || null,
+      });
+
+      setResults(result);
+      setSuccessMessage("Tính toán trọng số thành công!");
+
       if (result.CR > 0.1) {
         setConsistencyError(
           `Tỷ số nhất quán (CR = ${result.CR.toFixed(
@@ -166,7 +184,6 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
 
       setCalculating(false);
     } catch (err) {
-      // Check if the error contains a message about CR exceeding 10%
       if (
         err.response &&
         err.response.data &&
@@ -179,29 +196,29 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
       } else {
         setError("Lỗi khi tính toán trọng số tiêu chí");
       }
+
+      // Try to use weights and CR from error response if available
+      if (err.response?.data?.weights && err.response?.data?.CR) {
+        setResults({
+          weights: err.response.data.weights,
+          CR: err.response.data.CR,
+        });
+      }
+
       setCalculating(false);
     }
   };
 
   if (loading) {
-    return (
-      <div className="flex justify-center items-center py-10">
-        Đang tải tiêu chí...
-      </div>
-    );
-  }
-
-  if (error) {
-    return <div className="text-red-500 py-4">{error}</div>;
+    return <div className="p-4 text-center">Đang tải tiêu chí...</div>;
   }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md w-full">
+    <div className="bg-white p-6 rounded-lg shadow-md mb-8">
       <h2 className="text-xl font-semibold mb-4">
         Ma trận so sánh cặp các tiêu chí
       </h2>
 
-      {/* Added guidance instruction box */}
       <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
         <h3 className="font-medium text-blue-800 mb-2">
           Hướng dẫn đánh trọng số:
@@ -213,7 +230,18 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
         </p>
       </div>
 
-      {/* Consistency Error Alert */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+          {successMessage}
+        </div>
+      )}
+
       {consistencyError && (
         <div className="mb-6 p-4 bg-red-50 border border-red-300 rounded-md">
           <h3 className="font-medium text-red-800 mb-1">
@@ -226,7 +254,7 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
       <div className="overflow-x-auto">
         <table className="min-w-full bg-white border border-gray-300">
           <thead>
-            <tr>
+            <tr className="bg-gray-100">
               <th className="py-2 px-4 border-b border-r border-gray-300"></th>
               {criteria.map((criterion) => (
                 <th
@@ -241,7 +269,7 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
           <tbody>
             {criteria.map((rowCriterion, rowIndex) => (
               <tr key={rowCriterion.id}>
-                <td className="py-2 px-4 border-b border-r border-gray-300 font-medium">
+                <td className="py-2 px-4 border-b border-r border-gray-300 font-medium bg-gray-50">
                   {rowCriterion.name}
                 </td>
                 {criteria.map((colCriterion, colIndex) => (
@@ -250,7 +278,7 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
                     className="py-2 px-4 border-b border-r border-gray-300"
                   >
                     {rowIndex === colIndex ? (
-                      <span className="text-center block">1</span>
+                      <span className="text-center block text-gray-500">1</span>
                     ) : rowIndex < colIndex ? (
                       <select
                         value={matrix[rowIndex][colIndex] || ""}
@@ -286,37 +314,55 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
         </table>
       </div>
 
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex justify-between items-center">
         <button
           onClick={handleCalculate}
           disabled={calculating || disabled}
-          className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md disabled:bg-gray-400"
+          className={`px-4 py-2 rounded ${
+            disabled || calculating
+              ? "bg-gray-300 cursor-not-allowed"
+              : "bg-blue-500 hover:bg-blue-600 text-white"
+          }`}
         >
           {calculating ? "Đang tính..." : "Tính trọng số tiêu chí"}
         </button>
+
+        {results && (
+          <div
+            className={`text-sm ${
+              results.CR <= 0.1 ? "text-green-600" : "text-red-600"
+            }`}
+          >
+            CR = {results.CR.toFixed(4)}
+            {results.CR > 0.1 && (
+              <span className="ml-2">
+                (CR phải ≤ 0.1 để dữ liệu được chấp nhận)
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
-      {results && !consistencyError && (
+      {results && (
         <div className="mt-6 p-4 bg-gray-50 rounded-md">
           <h3 className="text-lg font-medium mb-2">
             Kết quả trọng số tiêu chí:
           </h3>
-          <ul className="space-y-1">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-2">
             {criteria.map((criterion, index) => {
               const criteriaKey = `C${index + 1}`;
               const weight =
                 results.weights[criteriaKey] || results.weights[criterion.id];
 
               return (
-                <li key={criterion.id} className="flex justify-between">
-                  <span>{criterion.name}:</span>
-                  <span className="font-medium">
-                    {weight ? weight.toFixed(4) : "0"}
-                  </span>
-                </li>
+                <div key={criterion.id} className="bg-gray-50 p-2 rounded">
+                  <span className="font-medium">{criterion.name}: </span>
+                  <span>{weight ? weight.toFixed(4) : "0"}</span>
+                </div>
               );
             })}
-          </ul>
+          </div>
+
           <div className="mt-3 pt-3 border-t border-gray-200">
             <div className="flex justify-between">
               <span>Tỷ số nhất quán (CR):</span>
@@ -329,6 +375,14 @@ const CriteriaMatrix = ({ expertId, onWeightsCalculated, disabled }) => {
               </span>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Debug info if customerId or expertId exist */}
+      {(customerId !== undefined || expertId !== undefined) && (
+        <div className="mt-4 text-xs text-gray-500">
+          <p>Customer ID: {customerId || "Chưa chọn"}</p>
+          <p>Expert ID: {expertId || "Chưa chọn"}</p>
         </div>
       )}
     </div>

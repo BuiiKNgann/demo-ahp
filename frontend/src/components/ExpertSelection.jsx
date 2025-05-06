@@ -11,12 +11,17 @@ const ExpertSelection = ({ onExpertSelect }) => {
     const fetchExperts = async () => {
       try {
         setLoading(true);
-        const expertsData = await getExperts();
-        setExperts(expertsData);
+        const response = await getExperts();
+
+        // Kiểm tra cấu trúc dữ liệu trả về và xử lý phù hợp
+        const expertsData = response.experts || response || [];
+        setExperts(Array.isArray(expertsData) ? expertsData : []);
+
         setLoading(false);
       } catch (err) {
         setError("Không thể tải danh sách chuyên gia");
         setLoading(false);
+        console.log(err);
       }
     };
 
@@ -58,11 +63,17 @@ const ExpertSelection = ({ onExpertSelect }) => {
           className="block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
         >
           <option value="">-- Chọn chuyên gia --</option>
-          {experts.map((expert) => (
-            <option key={expert.id} value={expert.id}>
-              {expert.name}
+          {experts && experts.length > 0 ? (
+            experts.map((expert) => (
+              <option key={expert.id} value={expert.id}>
+                {expert.name}
+              </option>
+            ))
+          ) : (
+            <option value="" disabled>
+              Không có chuyên gia nào
             </option>
-          ))}
+          )}
         </select>
       </div>
     </div>
