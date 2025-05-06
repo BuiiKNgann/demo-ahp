@@ -1,5 +1,13 @@
 import { useState, useEffect } from "react";
 import { getCriteria, calculateCriteriaWeights } from "../services/api";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
 const CriteriaMatrix = ({
   onWeightsCalculated,
@@ -15,6 +23,19 @@ const CriteriaMatrix = ({
   const [results, setResults] = useState(null);
   const [consistencyError, setConsistencyError] = useState(null);
   const [successMessage, setSuccessMessage] = useState("");
+
+  // Mảng màu cho biểu đồ
+  const COLORS = [
+    "#0088FE",
+    "#00C49F",
+    "#FFBB28",
+    "#FF8042",
+    "#8884D8",
+    "#82CA9D",
+    "#FF6F61",
+    "#6B7280",
+    "#F472B6",
+  ];
 
   const dropdownOptions = [
     1,
@@ -128,7 +149,6 @@ const CriteriaMatrix = ({
   };
 
   const handleCalculate = async () => {
-    // Check if we need to validate customerId and expertId
     if (
       (customerId === undefined || expertId === undefined) &&
       (customerId || expertId)
@@ -197,7 +217,6 @@ const CriteriaMatrix = ({
         setError("Lỗi khi tính toán trọng số tiêu chí");
       }
 
-      // Try to use weights and CR from error response if available
       if (err.response?.data?.weights && err.response?.data?.CR) {
         setResults({
           weights: err.response.data.weights,
@@ -208,6 +227,20 @@ const CriteriaMatrix = ({
       setCalculating(false);
     }
   };
+
+  // Chuẩn bị dữ liệu cho biểu đồ tròn
+  const chartData = results
+    ? criteria
+        .map((criterion, index) => {
+          const criteriaKey = `C${index + 1}`;
+          const weight = results.weights[criteriaKey] || 0;
+          return {
+            name: criterion.name,
+            value: weight,
+          };
+        })
+        .filter((item) => item.value > 0) // Lọc bỏ các giá trị 0
+    : [];
 
   if (loading) {
     return <div className="p-4 text-center">Đang tải tiêu chí...</div>;
@@ -363,6 +396,57 @@ const CriteriaMatrix = ({
             })}
           </div>
 
+          <div className="mt-6">
+            <h3 className="text-lg font-medium mb-4">
+              Biểu đồ phân bố trọng số tiêu chí:
+            </h3>
+            {chartData.length > 0 ? (
+              <div style={{ width: "100%", height: 400 }}>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={chartData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={120}
+                      label={({ name, percent }) =>
+                        `${name}: ${(percent * 100).toFixed(2)}%`
+                      }
+                      labelLine
+                    >
+                      {chartData.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={COLORS[index % COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value) => value.toFixed(4)}
+                      contentStyle={{
+                        backgroundColor: "#fff",
+                        border: "1px solid #ccc",
+                        borderRadius: "4px",
+                      }}
+                    />
+                    <Legend
+                      layout="vertical"
+                      align="right"
+                      verticalAlign="middle"
+                      wrapperStyle={{ paddingLeft: "20px" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <p className="text-gray-500">
+                Không có dữ liệu hợp lệ để hiển thị biểu đồ.
+              </p>
+            )}
+          </div>
+
           <div className="mt-3 pt-3 border-t border-gray-200">
             <div className="flex justify-between">
               <span>Tỷ số nhất quán (CR):</span>
@@ -378,7 +462,6 @@ const CriteriaMatrix = ({
         </div>
       )}
 
-      {/* Debug info if customerId or expertId exist */}
       {(customerId !== undefined || expertId !== undefined) && (
         <div className="mt-4 text-xs text-gray-500">
           <p>Customer ID: {customerId || "Chưa chọn"}</p>

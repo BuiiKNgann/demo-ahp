@@ -42,9 +42,14 @@ const COLORS = [
   "#d0ed57",
 ];
 
-const Results = ({ customerId, customerName, customers, finalScores = [] }) => {
+const Results = ({
+  customerId,
+  customerName,
+  customers,
+  finalScores = [],
+  loading = false,
+}) => {
   const [scores, setScores] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [chartData, setChartData] = useState([]);
 
@@ -124,15 +129,26 @@ const Results = ({ customerId, customerName, customers, finalScores = [] }) => {
   };
 
   if (loading) {
-    return <div className="py-6 text-center">Đang tải kết quả...</div>;
+    return (
+      <div className="bg-white p-6 rounded-lg shadow mt-4">
+        <div className="py-6 text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mr-2"></div>
+          Đang tính toán kết quả...
+        </div>
+      </div>
+    );
   }
 
   if (error) {
-    return <div className="text-red-600 py-4">{error}</div>;
+    return (
+      <div className="bg-white p-6 rounded-lg shadow mt-4">
+        <div className="text-red-600 py-4">{error}</div>
+      </div>
+    );
   }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow mt-8">
+    <div className="bg-white p-6 rounded-lg shadow mt-4">
       <h2 className="text-xl font-semibold mb-4">
         Kết quả cuối cùng cho khách hàng: {customerName || "Không xác định"}
       </h2>
