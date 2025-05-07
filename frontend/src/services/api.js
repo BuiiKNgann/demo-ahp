@@ -26,6 +26,22 @@ const handleApiError = (error, defaultMessage) => {
     throw new Error(defaultMessage || "Đã xảy ra lỗi không xác định.");
   }
 };
+
+// Hàm mới: Cập nhật bảng alternatives từ danh sách customer_ids
+export const updateAlternativesFromCustomers = async (customerIds) => {
+  try {
+    const response = await axiosInstance.post(
+      "/update-alternatives-from-customers",
+      {
+        customer_ids: customerIds,
+      }
+    );
+    return response.data;
+  } catch (error) {
+    return handleApiError(error, "Không thể cập nhật danh sách phương án");
+  }
+};
+
 export const getExperts = async () => {
   try {
     const response = await axiosInstance.get("/get-experts");
@@ -78,9 +94,30 @@ export const calculateCriteriaWeights = async (payload) => {
 
 export const calculateAlternativeScores = async (payload) => {
   try {
+    // Lấy danh sách alternatives hiện tại
+    const alternatives = await getAlternatives();
+    const validAltIds = new Set(alternatives.map((alt) => alt.id));
+
+    // Lọc comparisons để chỉ giữ lại các cặp có alt_ids tồn tại trong alternatives
+    const filteredComparisons = payload.comparisons.filter(
+      (comp) => validAltIds.has(comp.alt1_id) && validAltIds.has(comp.alt2_id)
+    );
+
+    if (filteredComparisons.length === 0) {
+      throw new Error(
+        "Không có phương án hợp lệ để so sánh. Vui lòng cập nhật danh sách phương án."
+      );
+    }
+
+    // Cập nhật payload với danh sách comparisons đã lọc
+    const updatedPayload = {
+      ...payload,
+      comparisons: filteredComparisons,
+    };
+
     const response = await axiosInstance.post(
       "/calculate-alternative-scores",
-      payload
+      updatedPayload
     );
     return response.data;
   } catch (error) {

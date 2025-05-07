@@ -4,7 +4,12 @@ import ExpertSelection from "./components/ExpertSelection";
 import CriteriaMatrix from "./components/CriteriaMatrix";
 import AlternativeMatrix from "./components/AlternativeMatrix";
 import Results from "./components/Results";
-import { getCriteria, getFinalAlternativeScores } from "./services/api";
+import {
+  getCriteria,
+  getFinalAlternativeScores,
+  getAlternatives,
+  updateAlternativesFromCustomers,
+} from "./services/api";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 
@@ -18,14 +23,41 @@ function App() {
   const [criteriaResults, setCriteriaResults] = useState(null);
   const [finalScores, setFinalScores] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [resultLoading, setResultLoading] = useState(false); // Thêm state để theo dõi riêng việc tải kết quả
+  const [resultLoading, setResultLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [resultError, setResultError] = useState(null); // Thêm state để theo dõi lỗi riêng cho phần kết quả
+  const [resultError, setResultError] = useState(null);
+  const [validAlternatives, setValidAlternatives] = useState([]); // Danh sách alternatives hợp lệ
 
   const selectedCustomerIds = useMemo(
     () => selectedCustomers.map((c) => c.id),
     [selectedCustomers]
   );
+
+  // Đồng bộ hóa với bảng alternatives khi selectedCustomers thay đổi
+  useEffect(() => {
+    const syncAlternatives = async () => {
+      if (selectedCustomerIds.length > 0) {
+        try {
+          const alternatives = await getAlternatives();
+          setValidAlternatives(alternatives);
+
+          const missingIds = selectedCustomerIds.filter(
+            (id) => !alternatives.some((alt) => alt.id === id)
+          );
+          if (missingIds.length > 0) {
+            console.log("Updating alternatives with missing IDs:", missingIds);
+            await updateAlternativesFromCustomers(selectedCustomerIds);
+            const updatedAlternatives = await getAlternatives();
+            setValidAlternatives(updatedAlternatives);
+          }
+        } catch (err) {
+          setError(`Không thể đồng bộ danh sách phương án: ${err.message}`);
+          console.error("Error syncing alternatives:", err);
+        }
+      }
+    };
+    syncAlternatives();
+  }, [selectedCustomerIds]);
 
   useEffect(() => {
     const fetchCriteria = async () => {
@@ -111,12 +143,11 @@ function App() {
         allAlternativesEvaluated &&
         selectedCustomerIds.length > 0 &&
         selectedExpertId &&
-        // Chỉ gọi API khi chưa có kết quả hoặc khi người dùng yêu cầu làm mới
         finalScores.length === 0
       ) {
         console.log("Calculating final scores automatically");
         try {
-          setResultLoading(true); // Chỉ set loading cho phần kết quả
+          setResultLoading(true);
           setResultError(null);
           const response = await getFinalAlternativeScores({
             customer_id: selectedCustomerIds[0],
@@ -315,7 +346,9 @@ function App() {
                     customerId={selectedCustomers[0]?.id}
                     criteriaId={criterion.id}
                     criteriaName={criterion.name}
-                    customers={selectedCustomers}
+                    customers={selectedCustomers.filter((c) =>
+                      validAlternatives.some((alt) => alt.id === c.id)
+                    )}
                     onScoresCalculated={handleAlternativeScoresCalculated}
                     disabled={alternativeScores[criterion.id] !== undefined}
                   />

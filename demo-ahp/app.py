@@ -1,3 +1,4 @@
+ 
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -5,23 +6,36 @@ import mysql.connector
 import numpy as np
 from scipy.stats import gmean
 import uuid
+import logging
 
 app = Flask(__name__)
 CORS(app)
 
+# Thiết lập logging để ghi lại các lỗi và thông tin debug
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 # ---------------- Kết nối DB ----------------
 def get_db_connection():
-    return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="12345",
-        database="ahp_demo1"
-    )
+    try:
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="12345",
+            database="ahp_demo1"
+        )
+        logger.info("Kết nối cơ sở dữ liệu thành công")
+        return conn
+    except mysql.connector.Error as e:
+        logger.error(f"Lỗi kết nối cơ sở dữ liệu: {str(e)}")
+        return None
 
 # ---------------- API: GET ----------------
 @app.route('/get-experts', methods=['GET'])
 def get_experts():
     conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
     cursor = conn.cursor()
     cursor.execute("SELECT id, name FROM experts")
     rows = cursor.fetchall()
@@ -32,12 +46,14 @@ def get_experts():
 @app.route('/get-customers', methods=['GET'])
 def get_customers():
     conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
     cursor = conn.cursor()
     query = "SELECT id, name, loan_amount, loan_purpose, financial_description, is_selected_for_ahp FROM customers"
     params = []
 
-    # Xây dựng điều kiện WHERE dựa trên tham số query
     conditions = []
+    conditions.append("is_selected_for_ahp = 0")
     if request.args.get('min_loan'):
         conditions.append("loan_amount >= %s")
         params.append(float(request.args.get('min_loan')))
@@ -72,6 +88,8 @@ def get_customers():
 @app.route('/get-criteria', methods=['GET'])
 def get_criteria():
     conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
     cursor = conn.cursor()
     cursor.execute("SELECT id, name FROM criteria")
     rows = cursor.fetchall()
@@ -82,6 +100,8 @@ def get_criteria():
 @app.route('/get-alternatives', methods=['GET'])
 def get_alternatives():
     conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
     cursor = conn.cursor()
     cursor.execute("SELECT id, name FROM alternatives")
     rows = cursor.fetchall()
@@ -97,6 +117,8 @@ def add_expert():
     if not name:
         return jsonify({"error": "Name is required"}), 400
     conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
     cursor = conn.cursor()
     cursor.execute("INSERT INTO experts (name) VALUES (%s)", (name,))
     conn.commit()
@@ -117,6 +139,8 @@ def add_customer():
         return jsonify({"error": "Name, loan_amount, and loan_purpose are required"}), 400
 
     conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO customers (name, loan_amount, loan_purpose, financial_description, is_selected_for_ahp) VALUES (%s, %s, %s, %s, %s)",
@@ -134,6 +158,8 @@ def add_criterion():
     if not name:
         return jsonify({"error": "Name is required"}), 400
     conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
     cursor = conn.cursor()
     cursor.execute("INSERT INTO criteria (name) VALUES (%s)", (name,))
     conn.commit()
@@ -145,16 +171,204 @@ def add_criterion():
 def add_alternative():
     data = request.get_json()
     name = data.get('name')
-    if not name:
-        return jsonify({"error": "Name is required"}), 400
+    customer_id = data.get('customer_id')
+    if not name or not customer_id:
+        return jsonify({"error": "Name and customer_id are required"}), 400
+
     conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO alternatives (name) VALUES (%s)", (name,))
+
+    # Kiểm tra xem customer_id đã được chọn chưa
+    cursor.execute("SELECT is_selected_for_ahp FROM customers WHERE id = %s", (customer_id,))
+    result = cursor.fetchone()
+    if not result:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": f"Customer with ID {customer_id} does not exist"}), 400
+    if result[0] == 1:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": f"Customer with ID {customer_id} is already selected for AHP"}), 400
+
+    # Kiểm tra xem customer_id đã tồn tại trong alternatives chưa
+    cursor.execute("SELECT id FROM alternatives WHERE id = %s", (customer_id,))
+    if cursor.fetchone():
+        cursor.close()
+        conn.close()
+        return jsonify({"error": f"Customer with ID {customer_id} already exists in alternatives"}), 400
+
+    # Thêm vào alternatives và cập nhật is_selected_for_ahp
+    cursor.execute("INSERT INTO alternatives (id, name) VALUES (%s, %s)", (customer_id, name))
+    # cursor.execute("UPDATE customers SET is_selected_for_ahp = 1 WHERE id = %s", (customer_id,))
     conn.commit()
     cursor.close()
     conn.close()
     return jsonify({"message": "Alternative added successfully"}), 201
 
+# ---------------- API: UPDATE ALTERNATIVES FROM CUSTOMERS ----------------
+# @app.route('/update-alternatives-from-customers', methods=['POST'])
+# def update_alternatives_from_customers():
+#     try:
+#         data = request.get_json()
+#         customer_ids = data.get('customer_ids')  # Danh sách ID khách hàng được lọc
+#         if not customer_ids or not isinstance(customer_ids, list):
+#             return jsonify({"error": "customer_ids must be a non-empty list"}), 400
+
+#         conn = get_db_connection()
+#         if not conn:
+#             return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
+#         cursor = conn.cursor()
+
+#         # Bước 1: Xóa các bảng liên quan trước để tránh vi phạm ràng buộc khóa ngoại
+#         logger.info("Bắt đầu xóa dữ liệu từ các bảng liên quan")
+
+#         # Xóa bảng alternative_comparisons
+#         cursor.execute("DELETE FROM alternative_comparisons")
+#         deleted_rows = cursor.rowcount
+#         logger.info(f"Số bản ghi bị xóa trong alternative_comparisons: {deleted_rows}")
+
+#         # Xóa bảng criteria_weights
+#         cursor.execute("DELETE FROM criteria_weights")
+#         deleted_rows = cursor.rowcount
+#         logger.info(f"Số bản ghi bị xóa trong criteria_weights: {deleted_rows}")
+
+#         # Xóa bảng ahp_final_scores
+#         cursor.execute("DELETE FROM ahp_final_scores")
+#         deleted_rows = cursor.rowcount
+#         logger.info(f"Số bản ghi bị xóa trong ahp_final_scores: {deleted_rows}")
+
+#         # Xóa bảng alternatives
+#         cursor.execute("DELETE FROM alternatives")
+#         deleted_rows = cursor.rowcount
+#         logger.info(f"Số bản ghi bị xóa trong alternatives: {deleted_rows}")
+
+#         # Bước 2: Đặt lại is_selected_for_ahp về 0 cho tất cả khách hàng
+#         logger.info("Đặt lại is_selected_for_ahp về 0")
+#         cursor.execute("UPDATE customers SET is_selected_for_ahp = 0")
+#         updated_rows = cursor.rowcount
+#         logger.info(f"Số bản ghi được cập nhật trong customers (is_selected_for_ahp): {updated_rows}")
+
+#         # Bước 3: Kiểm tra và thêm các khách hàng được chọn vào alternatives
+#         logger.info(f"Kiểm tra customer_ids: {customer_ids}")
+#         placeholders = ','.join(['%s'] * len(customer_ids))
+#         query = f"SELECT id, name FROM customers WHERE id IN ({placeholders})"
+#         cursor.execute(query, tuple(customer_ids))
+#         customers = cursor.fetchall()
+
+#         if not customers:
+#             cursor.close()
+#             conn.close()
+#             logger.error("Không tìm thấy khách hàng hợp lệ cho các ID cung cấp")
+#             return jsonify({"error": "No valid customers found for the provided IDs"}), 400
+
+#         # Thêm vào alternatives và cập nhật is_selected_for_ahp
+#         logger.info("Thêm khách hàng vào alternatives")
+#         for customer_id, name in customers:
+#             cursor.execute(
+#                 "INSERT INTO alternatives (id, name) VALUES (%s, %s)",
+#                 (customer_id, name)
+#             )
+#             cursor.execute(
+#                 "UPDATE customers SET is_selected_for_ahp = 1 WHERE id = %s",
+#                 (customer_id,)
+#             )
+
+#         conn.commit()
+#         logger.info("Commit giao dịch thành công")
+#         cursor.close()
+#         conn.close()
+
+#         return jsonify({"message": "Alternatives updated successfully"})
+
+#     except mysql.connector.Error as db_error:
+#         logger.error(f"Lỗi cơ sở dữ liệu: {str(db_error)}")
+#         if conn:
+#             conn.rollback()
+#             cursor.close()
+#             conn.close()
+#         return jsonify({"error": f"Lỗi cơ sở dữ liệu: {str(db_error)}"}), 500
+#     except Exception as e:
+#         logger.error(f"Lỗi không xác định: {str(e)}")
+#         if conn:
+#             conn.rollback()
+#             cursor.close()
+#             conn.close()
+#         return jsonify({"error": str(e)}), 500
+@app.route('/update-alternatives-from-customers', methods=['POST'])
+def update_alternatives_from_customers():
+    try:
+        data = request.get_json()
+        customer_ids = data.get('customer_ids')  # Danh sách ID khách hàng được lọc
+        if not customer_ids or not isinstance(customer_ids, list):
+            return jsonify({"error": "customer_ids must be a non-empty list"}), 400
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
+        cursor = conn.cursor()
+
+        # Bước 1: Xóa các bảng liên quan trước để tránh vi phạm ràng buộc khóa ngoại
+        logger.info("Bắt đầu xóa dữ liệu từ các bảng liên quan")
+        cursor.execute("DELETE FROM alternative_comparisons")
+        cursor.execute("DELETE FROM criteria_weights")
+        cursor.execute("DELETE FROM ahp_final_scores")
+        cursor.execute("DELETE FROM alternatives")
+        logger.info("Đã xóa dữ liệu từ các bảng liên quan")
+
+        # Bước 2: Đặt lại is_selected_for_ahp về 0 chỉ cho các khách hàng không có trong customer_ids
+        logger.info("Đặt lại is_selected_for_ahp cho các khách hàng không được chọn")
+        placeholders = ','.join(['%s'] * len(customer_ids))
+        query = f"UPDATE customers SET is_selected_for_ahp = 0 WHERE id NOT IN ({placeholders})"
+        cursor.execute(query, tuple(customer_ids))
+        logger.info(f"Số bản ghi được cập nhật trong customers (is_selected_for_ahp): {cursor.rowcount}")
+
+        # Bước 3: Kiểm tra và thêm các khách hàng được chọn vào alternatives
+        logger.info(f"Kiểm tra customer_ids: {customer_ids}")
+        query = f"SELECT id, name FROM customers WHERE id IN ({placeholders})"
+        cursor.execute(query, tuple(customer_ids))
+        customers = cursor.fetchall()
+
+        if not customers:
+            cursor.close()
+            conn.close()
+            logger.error("Không tìm thấy khách hàng hợp lệ cho các ID cung cấp")
+            return jsonify({"error": "No valid customers found for the provided IDs"}), 400
+
+        # Thêm vào alternatives và cập nhật is_selected_for_ahp
+        logger.info("Thêm khách hàng vào alternatives")
+        for customer_id, name in customers:
+            cursor.execute(
+                "INSERT INTO alternatives (id, name) VALUES (%s, %s)",
+                (customer_id, name)
+            )
+            # cursor.execute(
+            #     "UPDATE customers SET is_selected_for_ahp = 1 WHERE id = %s",
+            #     (customer_id,)
+            # )
+
+        conn.commit()
+        logger.info("Commit giao dịch thành công")
+        cursor.close()
+        conn.close()
+
+        return jsonify({"message": "Alternatives updated successfully"})
+
+    except mysql.connector.Error as db_error:
+        logger.error(f"Lỗi cơ sở dữ liệu: {str(db_error)}")
+        if conn:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+        return jsonify({"error": f"Lỗi cơ sở dữ liệu: {str(db_error)}"}), 500
+    except Exception as e:
+        logger.error(f"Lỗi không xác định: {str(e)}")
+        if conn:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+        return jsonify({"error": str(e)}), 500
 # ---------------- AHP: Tính trọng số tiêu chí ----------------
 @app.route('/calculate-criteria-weights', methods=['POST'])
 def calculate_criteria_weights():
@@ -200,8 +414,18 @@ def calculate_criteria_weights():
             }), 400
 
         conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
         cursor = conn.cursor()
 
+        # Xóa các bản ghi cũ trong criteria_weights cho customer_id và expert_id
+        cursor.execute(
+            "DELETE FROM criteria_weights WHERE customer_id = %s AND expert_id = %s",
+            (customer_id, expert_id)
+        )
+        logger.info(f"Xóa {cursor.rowcount} bản ghi cũ trong criteria_weights")
+
+        # Lưu dữ liệu mới
         for i, weight in enumerate(weights):
             criterion_id = i + 1
             cursor.execute(
@@ -220,6 +444,7 @@ def calculate_criteria_weights():
         })
 
     except Exception as e:
+        logger.error(f"Lỗi trong calculate_criteria_weights: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 # ---------------- AHP: Tính điểm phương án ----------------
@@ -230,7 +455,7 @@ def calculate_alternative_scores():
         expert_id = data['expert_id']
         criterion_id = data['criteria_id']
         comparisons = data['comparisons']
-        customer_id = data.get('customer_id')  # Kiểm tra nếu không có thì báo lỗi
+        customer_id = data.get('customer_id')
         if not customer_id:
             return jsonify({"error": "customer_id is required"}), 400
 
@@ -247,39 +472,23 @@ def calculate_alternative_scores():
 
         # Kết nối cơ sở dữ liệu
         conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
         cursor = conn.cursor()
 
-        # Kiểm tra và thêm alt_ids vào bảng alternatives nếu chưa tồn tại
-        if not alt_ids:
-            cursor.close()
-            conn.close()
-            return jsonify({"error": "Danh sách ID phương án trống"}), 400
-
+        # Kiểm tra xem tất cả alt_ids có tồn tại trong alternatives không
         placeholders = ','.join(['%s'] * len(alt_ids))
         query = f"SELECT id FROM alternatives WHERE id IN ({placeholders})"
         cursor.execute(query, tuple(alt_ids))
         existing_alt_ids = {row[0] for row in cursor.fetchall()}
 
-        # Lấy thông tin khách hàng để thêm vào alternatives
-        query = f"SELECT id, name FROM customers WHERE id IN ({placeholders})"
-        cursor.execute(query, tuple(alt_ids))
-        customer_data = cursor.fetchall()
-        customer_dict = {row[0]: row[1] for row in customer_data}
-
-        # Thêm các alt_ids chưa tồn tại vào bảng alternatives
-        for alt_id in alt_ids:
-            if alt_id not in existing_alt_ids:
-                if alt_id not in customer_dict:
-                    cursor.close()
-                    conn.close()
-                    return jsonify({
-                        "error": f"Không tìm thấy khách hàng với ID: {alt_id} trong bảng customers."
-                    }), 400
-                cursor.execute(
-                    "INSERT INTO alternatives (id, name) VALUES (%s, %s)",
-                    (alt_id, customer_dict[alt_id])
-                )
-        conn.commit()
+        if len(existing_alt_ids) != len(alt_ids):
+            missing_ids = set(alt_ids) - existing_alt_ids
+            cursor.close()
+            conn.close()
+            return jsonify({
+                "error": f"Các phương án với ID {missing_ids} không tồn tại trong bảng alternatives"
+            }), 400
 
         # Khởi tạo ma trận
         matrix = np.ones((n, n))
@@ -309,14 +518,15 @@ def calculate_alternative_scores():
         RI = RI_dict.get(n, 1.49)
         CR = CI / RI if RI != 0 else 0
 
-        # Lưu dữ liệu nếu CR < 0.1
+        # Xóa các bản ghi cũ trong alternative_comparisons cho customer_id, expert_id, và criterion_id
+        cursor.execute(
+            "DELETE FROM alternative_comparisons WHERE customer_id = %s AND expert_id = %s AND criterion_id = %s",
+            (customer_id, expert_id, criterion_id)
+        )
+        logger.info(f"Xóa {cursor.rowcount} bản ghi cũ trong alternative_comparisons")
+
+        # Lưu dữ liệu mới nếu CR < 0.1
         if CR < 0.1:
-            # Xóa các bản ghi cũ nếu tồn tại
-            cursor.execute(
-                "DELETE FROM alternative_comparisons WHERE expert_id = %s AND criterion_id = %s AND customer_id = %s",
-                (expert_id, criterion_id, customer_id)
-            )
-            # Lưu các so sánh mới
             for comp in comparisons:
                 cursor.execute(
                     "INSERT INTO alternative_comparisons (customer_id, expert_id, criterion_id, alternative1_id, alternative2_id, value) VALUES (%s, %s, %s, %s, %s, %s)",
@@ -337,14 +547,18 @@ def calculate_alternative_scores():
         })
 
     except KeyError as e:
+        logger.error(f"Thiếu trường bắt buộc trong payload: {str(e)}")
         return jsonify({"error": f"Thiếu trường bắt buộc trong payload: {str(e)}"}), 400
     except Exception as e:
+        logger.error(f"Lỗi trong calculate_alternative_scores: {str(e)}")
         return jsonify({"error": f"Lỗi server: {str(e)}"}), 500
 
 # ---------------- API: GET trọng số và điểm ----------------
 @app.route('/get-criteria-weights', methods=['GET'])
 def get_criteria_weights():
     conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
     cursor = conn.cursor()
     query = """
         SELECT criteria.name, criteria_weights.weight, customers.name AS customer_name, experts.name AS expert_name
@@ -379,7 +593,6 @@ def get_criteria_weights():
         } for row in rows]
     })
 
-
 @app.route('/get-final-alternative-scores', methods=['GET'])
 def get_final_alternative_scores():
     try:
@@ -388,8 +601,8 @@ def get_final_alternative_scores():
             return jsonify({"error": "customer_id is required"}), 400
 
         conn = get_db_connection()
-        if conn is None:
-            return jsonify({"error": "Database connection failed"}), 500
+        if not conn:
+            return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
         cursor = conn.cursor()
 
         # Lấy danh sách tất cả các phương án (khách hàng)
@@ -435,7 +648,7 @@ def get_final_alternative_scores():
             expert_matrices = {}
             for alt1_id, alt2_id, value, expert_id in comparisons:
                 if alt1_id not in alt_ids or alt2_id not in alt_ids:
-                    continue  # Bỏ qua nếu alternative không tồn tại trong danh sách
+                    continue
                 if expert_id not in expert_matrices:
                     expert_matrices[expert_id] = np.ones((len(alt_ids), len(alt_ids)))
                 i = alt_ids.index(alt1_id)
@@ -451,7 +664,7 @@ def get_final_alternative_scores():
                 if np.any(col_sum == 0):
                     continue
                 norm_matrix = aggregated_matrix / col_sum
-                scores = norm_matrix.mean(axis=1)  # Trọng số của phương án theo tiêu chí
+                scores = norm_matrix.mean(axis=1)
 
                 weight = criteria_weights.get(criterion_id, 0.0)
                 for i, alt_id in enumerate(alt_ids):
@@ -460,7 +673,7 @@ def get_final_alternative_scores():
         # Xóa các bản ghi cũ trong ahp_final_scores để tránh lặp
         cursor.execute("DELETE FROM ahp_final_scores WHERE customer_id = %s", (customer_id,))
 
-        # Lưu điểm vào bảng ahp_final_scores, đảm bảo không lặp
+        # Lưu điểm vào bảng ahp_final_scores
         for alt_id, score in final_scores.items():
             score_float = float(score)
             cursor.execute("""
@@ -470,7 +683,7 @@ def get_final_alternative_scores():
 
         conn.commit()
 
-        # Lấy điểm cuối cùng, không lặp lại (dùng GROUP BY cho MySQL)
+        # Lấy điểm cuối cùng
         cursor.execute("""
             SELECT alternatives.name, MAX(ahp_final_scores.final_score) AS final_score
             FROM ahp_final_scores
@@ -484,12 +697,13 @@ def get_final_alternative_scores():
         cursor.close()
         conn.close()
 
-        # Chuyển đổi và trả về kết quả
         result = [{"alternative_name": row[0], "final_score": float(row[1])} for row in rows]
         return jsonify({"final_scores": result})
 
     except Exception as e:
+        logger.error(f"Lỗi trong get_final_alternative_scores: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
 # ---------------- Run app ----------------
 if __name__ == '__main__':
     app.run(debug=True)
