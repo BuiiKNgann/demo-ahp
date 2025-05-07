@@ -26,14 +26,14 @@ function App() {
   const [resultLoading, setResultLoading] = useState(false);
   const [error, setError] = useState(null);
   const [resultError, setResultError] = useState(null);
-  const [validAlternatives, setValidAlternatives] = useState([]); // Danh sách alternatives hợp lệ
+  const [validAlternatives, setValidAlternatives] = useState([]);
+  const [matrixSaved, setMatrixSaved] = useState(false);
 
   const selectedCustomerIds = useMemo(
     () => selectedCustomers.map((c) => c.id),
     [selectedCustomers]
   );
 
-  // Đồng bộ hóa với bảng alternatives khi selectedCustomers thay đổi
   useEffect(() => {
     const syncAlternatives = async () => {
       if (selectedCustomerIds.length > 0) {
@@ -83,6 +83,7 @@ function App() {
     setAlternativeScores({});
     setCriteriaResults(null);
     setFinalScores([]);
+    setMatrixSaved(false);
   }, []);
 
   const handleExpertSelect = useCallback((expertId) => {
@@ -93,6 +94,7 @@ function App() {
     setAlternativeScores({});
     setCriteriaResults(null);
     setFinalScores([]);
+    setMatrixSaved(false);
   }, []);
 
   const handleCriteriaWeightsCalculated = useCallback((result) => {
@@ -136,7 +138,6 @@ function App() {
     [allCriteriaEvaluated, selectedCustomers, criteria, alternativeScores]
   );
 
-  // Tính toán kết quả cuối cùng sau khi tất cả các đánh giá được hoàn thành
   useEffect(() => {
     const fetchFinalScores = async () => {
       if (
@@ -204,11 +205,44 @@ function App() {
   );
 
   const exportToExcel = useCallback(
-    (e) => {
+    async (e) => {
       e.preventDefault();
       try {
         console.log("Exporting to Excel...");
         const workbook = XLSX.utils.book_new();
+
+        // 1. Sheet: Criteria Comparison Matrix
+        try {
+          const response = await fetch(
+            `http://localhost:5000/get-criteria-matrix?customer_id=${selectedCustomerIds[0]}&expert_id=${selectedExpertId}`
+          );
+          const data = await response.json();
+          if (data.error) throw new Error(data.error);
+
+          const matrixData = data.matrix;
+          const criteriaNames = criteria.map((c) => c.name);
+          const criteriaMatrix = criteriaNames.map((_, i) => {
+            const row = { "Tiêu chí": criteriaNames[i] };
+            criteriaNames.forEach((_, j) => {
+              const value =
+                matrixData.find(
+                  (item) =>
+                    item.criterion1_id === i + 1 && item.criterion2_id === j + 1
+                )?.value || 1;
+              row[criteriaNames[j]] = Number(value.toFixed(4));
+            });
+            return row;
+          });
+          const criteriaMatrixSheet = XLSX.utils.json_to_sheet(criteriaMatrix);
+          XLSX.utils.book_append_sheet(
+            workbook,
+            criteriaMatrixSheet,
+            "Criteria Comparison Matrix"
+          );
+        } catch (err) {
+          console.error("Error fetching criteria matrix:", err);
+        }
+        // 2. Sheet: Criteria Weights
         const criteriaWeightsData = criteria.map((criterion, index) => {
           const criteriaKey = `C${index + 1}`;
           const weight = criteriaWeights[criteriaKey] || 0;
@@ -230,7 +264,82 @@ function App() {
           criteriaWeightsSheet,
           "Criteria Weights"
         );
+        // 3. Sheet: All Alternative Comparison Matrices
+        const allAltMatrices = [];
+        for (const criterion of criteria) {
+          try {
+            const response = await fetch(
+              `http://localhost:5000/get-alternative-comparisons?customer_id=${selectedCustomerIds[0]}&expert_id=${selectedExpertId}&criterion_id=${criterion.id}`
+            );
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
 
+            const comparisons = data.comparisons;
+            const altNames = selectedCustomers.map((c) => c.name);
+
+            // Thêm tiêu đề cho ma trận
+            allAltMatrices.push({
+              "Phương án": `Ma trận so sánh cặp khách hàng theo tiêu chí: ${criterion.name}`,
+            });
+            allAltMatrices.push({});
+            // Thêm hàng "Phương án Nguồn V:", mỗi phương án nằm trong một ô riêng
+            const sourceRow = { "Phương án": "Phương án Nguồn V:" };
+            altNames.forEach((name, index) => {
+              sourceRow[altNames[index]] = name;
+            });
+
+            // Tạo ma trận, bao gồm hàng tiêu đề
+            const altMatrix = [
+              sourceRow, // Hàng "Phương án Nguồn V:" với từng phương án trong một ô
+              ...altNames.map((_, i) => {
+                const row = { "Phương án": altNames[i] };
+                altNames.forEach((_, j) => {
+                  const comparison = comparisons.find(
+                    (comp) =>
+                      (comp.alternative1_id === selectedCustomers[i].id &&
+                        comp.alternative2_id === selectedCustomers[j].id) ||
+                      (comp.alternative1_id === selectedCustomers[j].id &&
+                        comp.alternative2_id === selectedCustomers[i].id)
+                  );
+                  let value = 1;
+                  if (comparison) {
+                    if (
+                      comparison.alternative1_id === selectedCustomers[i].id &&
+                      comparison.alternative2_id === selectedCustomers[j].id
+                    ) {
+                      value = comparison.value;
+                    } else {
+                      value = 1 / comparison.value;
+                    }
+                  }
+                  row[altNames[j]] = Number(value.toFixed(4));
+                });
+                return row;
+              }),
+            ];
+
+            allAltMatrices.push(...altMatrix);
+            // Thêm hai hàng trống sau mỗi ma trận
+            allAltMatrices.push({});
+            allAltMatrices.push({});
+          } catch (err) {
+            console.error(
+              `Error fetching alternative matrix for criterion ${criterion.name}:`,
+              err
+            );
+          }
+        }
+
+        if (allAltMatrices.length > 0) {
+          const allAltMatrixSheet = XLSX.utils.json_to_sheet(allAltMatrices);
+          XLSX.utils.book_append_sheet(
+            workbook,
+            allAltMatrixSheet,
+            "Alternative Comparison Matrices"
+          );
+        }
+
+        // 4. Sheet: Alternative Scores
         const alternativeScoresData = selectedCustomers.map((customer) => {
           const row = { "Tên khách hàng": customer.name };
           criteria.forEach((criterion) => {
@@ -248,6 +357,7 @@ function App() {
           "Alternative Scores"
         );
 
+        // 5. Sheet: Final Scores
         const finalScoresData = finalScores.map((score, index) => ({
           "Xếp hạng": index + 1,
           "Tên phương án": score.alternative_name,
@@ -260,6 +370,7 @@ function App() {
           "Final Scores"
         );
 
+        // Xuất file Excel
         const excelBuffer = XLSX.write(workbook, {
           bookType: "xlsx",
           type: "array",
@@ -281,6 +392,8 @@ function App() {
       selectedCustomers,
       alternativeScores,
       finalScores,
+      selectedCustomerIds,
+      selectedExpertId,
     ]
   );
 
@@ -329,6 +442,11 @@ function App() {
                 onWeightsCalculated={handleCriteriaWeightsCalculated}
                 disabled={criteriaEvaluated}
               />
+              {matrixSaved && (
+                <div className="mt-2 bg-green-100 border border-green-400 text-green-700 px-4 py-2 rounded">
+                  Ma trận tiêu chí đã được lưu thành công!
+                </div>
+              )}
             </div>
           )}
 

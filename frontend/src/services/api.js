@@ -42,6 +42,21 @@ export const updateAlternativesFromCustomers = async (customerIds) => {
   }
 };
 
+// Hàm mới: Lưu ma trận tiêu chí
+export const saveCriteriaMatrix = async (matrix, customerId, expertId) => {
+  try {
+    const payload = {
+      matrix: matrix,
+      customer_id: customerId,
+      expert_id: expertId,
+    };
+    const response = await axiosInstance.post("/save-criteria-matrix", payload);
+    return response.data;
+  } catch (error) {
+    return handleApiError(error, "Không thể lưu ma trận tiêu chí");
+  }
+};
+
 export const getExperts = async () => {
   try {
     const response = await axiosInstance.get("/get-experts");
@@ -144,4 +159,25 @@ export const getFinalAlternativeScores = async (params) => {
   } catch (error) {
     throw handleApiError(error, "Không thể lấy kết quả cuối cùng");
   }
+};
+export const getCriteriaMatrix = async ({ customer_id, expert_id }) => {
+  const response = await fetch(
+    `http://localhost:5000/get-criteria-matrix?customer_id=${customer_id}&expert_id=${expert_id}`
+  );
+  const data = await response.json();
+  if (data.error) throw new Error(data.error);
+  return data.matrix;
+};
+
+export const getAlternativeComparisons = async ({
+  customer_id,
+  expert_id,
+  criterion_id,
+}) => {
+  const response = await fetch(
+    `http://localhost:5000/get-alternative-comparisons?customer_id=${customer_id}&expert_id=${expert_id}&criterion_id=${criterion_id}`
+  );
+  const data = await response.json();
+  if (data.error) throw new Error(data.error);
+  return data.comparisons;
 };

@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
-import { getCriteria, calculateCriteriaWeights } from "../services/api";
+import {
+  getCriteria,
+  calculateCriteriaWeights,
+  saveCriteriaMatrix,
+} from "../services/api";
 import {
   PieChart,
   Pie,
@@ -149,12 +153,10 @@ const CriteriaMatrix = ({
   };
 
   const handleCalculate = async () => {
-    if (
-      (customerId === undefined || expertId === undefined) &&
-      (customerId || expertId)
-    ) {
+    // Kiểm tra customerId và expertId
+    if (customerId === undefined || expertId === undefined) {
       setError(
-        "Vui lòng chọn chuyên gia và khách hàng trước khi tính trọng số"
+        "Vui lòng chọn khách hàng và chuyên gia trước khi tính trọng số"
       );
       return;
     }
@@ -162,6 +164,7 @@ const CriteriaMatrix = ({
     const size = criteria.length;
     let isComplete = true;
 
+    // Kiểm tra ma trận đầy đủ giá trị
     for (let i = 0; i < size; i++) {
       for (let j = 0; j < size; j++) {
         if (i !== j && (matrix[i][j] <= 0 || matrix[i][j] === undefined)) {
@@ -183,14 +186,23 @@ const CriteriaMatrix = ({
       setConsistencyError(null);
       setSuccessMessage("");
 
+      // Lưu ma trận trước khi tính toán trọng số
+      try {
+        await saveCriteriaMatrix(matrix, customerId, expertId);
+        setSuccessMessage("Lưu ma trận và tính toán trọng số thành công!");
+      } catch (saveErr) {
+        setError("Lưu ma trận thất bại: " + saveErr.message);
+        // Tiếp tục tính toán trọng số ngay cả khi lưu thất bại
+      }
+
+      // Tính toán trọng số
       const result = await calculateCriteriaWeights({
         comparison_matrix: matrix,
-        customer_id: customerId || null,
-        expert_id: expertId || null,
+        customer_id: customerId,
+        expert_id: expertId,
       });
 
       setResults(result);
-      setSuccessMessage("Tính toán trọng số thành công!");
 
       if (result.CR > 0.1) {
         setConsistencyError(
@@ -214,7 +226,7 @@ const CriteriaMatrix = ({
           `Tỷ số nhất quán (CR) vượt quá 10%. Ma trận không nhất quán, vui lòng điều chỉnh lại giá trị so sánh.`
         );
       } else {
-        setError("Lỗi khi tính toán trọng số tiêu chí");
+        setError("Lỗi khi tính toán trọng số tiêu chí: " + err.message);
       }
 
       if (err.response?.data?.weights && err.response?.data?.CR) {
