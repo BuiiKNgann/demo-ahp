@@ -45,6 +45,7 @@ const AlternativeMatrix = ({
   const formatValue = (value) => {
     if (!value) return "";
     const fractionMap = {
+      1: "1",
       0.5: "1/2",
       0.3333333333333333: "1/3",
       0.25: "1/4",
@@ -308,9 +309,15 @@ const AlternativeMatrix = ({
                         ))}
                       </select>
                     ) : (
+                      // <span className="text-center block text-gray-500">
+                      //   {matrix[colIndex][rowIndex] &&
+                      //   matrix[colIndex][rowIndex] !== 1
+                      //     ? formatValue(1 / matrix[colIndex][rowIndex])
+                      //     : "0"}
+                      // </span>
                       <span className="text-center block text-gray-500">
-                        {matrix[colIndex][rowIndex] &&
-                        matrix[colIndex][rowIndex] !== 1
+                        {matrix[colIndex][rowIndex] !== null &&
+                        !isNaN(matrix[colIndex][rowIndex])
                           ? formatValue(1 / matrix[colIndex][rowIndex])
                           : "0"}
                       </span>

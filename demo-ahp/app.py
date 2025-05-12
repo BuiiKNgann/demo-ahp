@@ -379,6 +379,7 @@ def save_criteria_matrix():
         return jsonify({"error": str(e)}), 500
 
 # ---------------- AHP: Tính trọng số tiêu chí ----------------
+ 
 @app.route('/calculate-criteria-weights', methods=['POST'])
 def calculate_criteria_weights():
     try:
@@ -418,8 +419,8 @@ def calculate_criteria_weights():
         if CR > 0.1:
             return jsonify({
                 "message": "Consistency Ratio (CR) exceeds 10%. Data not saved.",
-                "weights": {f"C{i+1}": round(float(w), 4) for i, w in enumerate(weights)},
-                "CR": round(CR, 4)
+                "weights": {f"C{i+1}": float(w) for i, w in enumerate(weights)},  # Không làm tròn
+                "CR": float(CR)  # Không làm tròn
             }), 400
 
         conn = get_db_connection()
@@ -434,12 +435,12 @@ def calculate_criteria_weights():
         )
         logger.info(f"Xóa {cursor.rowcount} bản ghi cũ trong criteria_weights")
 
-        # Lưu dữ liệu mới
+        # Lưu dữ liệu mới (không làm tròn)
         for i, weight in enumerate(weights):
             criterion_id = i + 1
             cursor.execute(
                 "INSERT INTO criteria_weights (customer_id, expert_id, criterion_id, weight) VALUES (%s, %s, %s, %s)",
-                (customer_id, expert_id, criterion_id, round(float(weight), 4))
+                (customer_id, expert_id, criterion_id, float(weight))  # Không làm tròn
             )
 
         conn.commit()
@@ -448,15 +449,15 @@ def calculate_criteria_weights():
 
         return jsonify({
             "message": "Weights calculated and stored successfully.",
-            "weights": {f"C{i+1}": round(float(w), 4) for i, w in enumerate(weights)},
-            "CR": round(CR, 4)
+            "weights": {f"C{i+1}": float(w) for i, w in enumerate(weights)},  # Không làm tròn
+            "CR": float(CR)  # Không làm tròn
         })
 
     except Exception as e:
         logger.error(f"Lỗi trong calculate_criteria_weights: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
 # ---------------- AHP: Tính điểm phương án ----------------
+ 
 @app.route('/calculate-alternative-scores', methods=['POST'])
 def calculate_alternative_scores():
     try:
@@ -546,13 +547,13 @@ def calculate_alternative_scores():
         cursor.close()
         conn.close()
 
-        # Trả về scores với key là alt_id (customer.id)
-        scores = {str(alt_id): round(float(weight), 4) for alt_id, weight in zip(alt_ids, weights)}
+        # Trả về scores với key là alt_id (customer.id) (không làm tròn)
+        scores = {str(alt_id): float(weight) for alt_id, weight in zip(alt_ids, weights)}
 
         return jsonify({
             "message": "Alternative scores calculated successfully." if CR < 0.1 else "Consistency Ratio (CR) exceeds 10%. Data not saved.",
             "scores": scores,
-            "CR": round(CR, 4)
+            "CR": float(CR)  # Không làm tròn
         })
 
     except KeyError as e:
@@ -561,7 +562,6 @@ def calculate_alternative_scores():
     except Exception as e:
         logger.error(f"Lỗi trong calculate_alternative_scores: {str(e)}")
         return jsonify({"error": f"Lỗi server: {str(e)}"}), 500
-
 # ---------------- API: GET trọng số và điểm ----------------
 @app.route('/get-criteria-weights', methods=['GET'])
 def get_criteria_weights():
@@ -602,6 +602,7 @@ def get_criteria_weights():
         } for row in rows]
     })
 
+ 
 @app.route('/get-final-alternative-scores', methods=['GET'])
 def get_final_alternative_scores():
     try:
@@ -682,23 +683,22 @@ def get_final_alternative_scores():
         # Xóa các bản ghi cũ trong ahp_final_scores để tránh lặp
         cursor.execute("DELETE FROM ahp_final_scores WHERE customer_id = %s", (customer_id,))
 
-        # Lưu điểm vào bảng ahp_final_scores
+        # Lưu điểm vào bảng ahp_final_scores (không làm tròn)
         for alt_id, score in final_scores.items():
             score_float = float(score)
             cursor.execute("""
                 INSERT INTO ahp_final_scores (customer_id, alternative_id, final_score)
                 VALUES (%s, %s, %s)
-            """, (customer_id, alt_id, round(score_float, 4)))
+            """, (customer_id, alt_id, score_float))  # Không làm tròn
 
         conn.commit()
 
-        # Lấy điểm cuối cùng
+        # Lấy điểm cuối cùng (không làm tròn khi tính, chỉ làm tròn khi trả về nếu cần)
         cursor.execute("""
-            SELECT alternatives.name, MAX(ahp_final_scores.final_score) AS final_score
+            SELECT alternatives.name, ahp_final_scores.final_score AS final_score
             FROM ahp_final_scores
             JOIN alternatives ON ahp_final_scores.alternative_id = alternatives.id
             WHERE ahp_final_scores.customer_id = %s
-            GROUP BY alternatives.name
             ORDER BY final_score DESC
         """, (customer_id,))
         rows = cursor.fetchall()
@@ -706,13 +706,13 @@ def get_final_alternative_scores():
         cursor.close()
         conn.close()
 
+        # Trả về kết quả không làm tròn
         result = [{"alternative_name": row[0], "final_score": float(row[1])} for row in rows]
         return jsonify({"final_scores": result})
 
     except Exception as e:
         logger.error(f"Lỗi trong get_final_alternative_scores: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
 # ---------------- Run app ----------------
 if __name__ == '__main__':
     app.run(debug=True)
