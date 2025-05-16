@@ -1,18 +1,18 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import * as XLSX from "xlsx";
-import CustomerFilter from "./components/CustomerFilter";
-import ExpertSelection from "./components/ExpertSelection";
-import CriteriaMatrix from "./components/CriteriaMatrix";
-import AlternativeMatrix from "./components/AlternativeMatrix";
-import Results from "./components/Results";
-import ExportExcel from "./components/ExportToExcel";
+import CustomerFilter from "./components/CustomerFilter.jsx";
+import ExpertSelection from "./components/ExpertSelection.jsx";
+import CriteriaMatrix from "./components/CriteriaMatrix.jsx";
+import AlternativeMatrix from "./components/AlternativeMatrix.jsx";
+import Results from "./components/Results.jsx";
+import ExportExcel from "./components/ExportToExcel.jsx";
+import ImportExcel from "./components/ImportExcel.jsx";
 import {
   getCriteria,
   getFinalAlternativeScores,
   getAlternatives,
   updateAlternativesFromCustomers,
 } from "./services/api";
-
+import * as XLSX from "xlsx";
 function App() {
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [selectedExpertId, setSelectedExpertId] = useState(null);
@@ -30,6 +30,10 @@ function App() {
   const [matrixSaved, setMatrixSaved] = useState(false);
   const [criteriaCR, setCriteriaCR] = useState(null);
   const [alternativeCRs, setAlternativeCRs] = useState({});
+  const [importedMatrices, setImportedMatrices] = useState({
+    criteriaMatrix: null,
+    alternativeMatrices: {},
+  });
 
   const selectedCustomerIds = useMemo(
     () => selectedCustomers.map((c) => c.id),
@@ -89,6 +93,7 @@ function App() {
     setResultError(null);
     setCriteriaCR(null);
     setAlternativeCRs({});
+    setImportedMatrices({ criteriaMatrix: null, alternativeMatrices: {} });
   }, []);
 
   const handleExpertSelect = useCallback((expertId) => {
@@ -103,6 +108,7 @@ function App() {
     setResultError(null);
     setCriteriaCR(null);
     setAlternativeCRs({});
+    setImportedMatrices({ criteriaMatrix: null, alternativeMatrices: {} });
   }, []);
 
   const handleCriteriaWeightsCalculated = useCallback((result) => {
@@ -131,6 +137,16 @@ function App() {
           [criteriaId]: result.scores || {},
         }));
       }
+    },
+    []
+  );
+
+  const handleImportMatrices = useCallback(
+    ({ criteriaMatrix, alternativeMatrices }) => {
+      setImportedMatrices({
+        criteriaMatrix,
+        alternativeMatrices,
+      });
     },
     []
   );
@@ -311,10 +327,9 @@ function App() {
         matrixData[i + 1][i + 1] = 1;
       });
       const ws = XLSX.utils.aoa_to_sheet(matrixData);
-      // Làm sạch tên sheet, loại bỏ ký tự đặc biệt và giới hạn 31 ký tự
       const cleanSheetName = criterion.name
-        .replace(/[:\\\/?*\[\]]/g, "") // Loại bỏ ký tự đặc biệt
-        .slice(0, 31); // Giới hạn độ dài
+        .replace(/[:\\\/?*\[\]]/g, "")
+        .slice(0, 31);
       XLSX.utils.book_append_sheet(workbook, ws, cleanSheetName);
     });
 
@@ -353,13 +368,18 @@ function App() {
               </h2>
               <CustomerFilter onCustomerSelect={handleCustomerSelect} />
               {selectedCustomers.length >= 4 && (
-                <div className="mt-4">
+                <div className="mt-4 flex space-x-4">
                   <button
                     onClick={createTemplateFile}
                     className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
                   >
                     Tạo file mẫu Excel
                   </button>
+                  <ImportExcel
+                    onImport={handleImportMatrices}
+                    disabled={selectedCustomers.length < 4}
+                    criteria={criteria}
+                  />
                 </div>
               )}
             </div>
@@ -376,6 +396,7 @@ function App() {
                 onWeightsCalculated={handleCriteriaWeightsCalculated}
                 disabled={criteriaEvaluated}
                 criteria={criteria}
+                importedMatrix={importedMatrices.criteriaMatrix}
               />
               {matrixSaved && (
                 <div className="mt-2 bg-green-100 border border-green-400 text-green-700 px-4 py-2 rounded">
@@ -405,7 +426,9 @@ function App() {
                     onScoresCalculated={handleAlternativeScoresCalculated}
                     disabled={alternativeScores[criterion.id] !== undefined}
                     isPreviousMatrixValid={isPreviousMatrixValid(index)}
-                    criteria={criteria}
+                    importedMatrix={
+                      importedMatrices.alternativeMatrices[criterion.id]
+                    }
                   />
                 ))}
               </div>
