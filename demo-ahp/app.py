@@ -31,6 +31,7 @@ def get_db_connection():
         return None
 
 # ---------------- API: GET ----------------
+#Lấy danh sách các chuyên gia 
 @app.route('/get-experts', methods=['GET'])
 def get_experts():
     conn = get_db_connection()
@@ -43,6 +44,7 @@ def get_experts():
     conn.close()
     return jsonify({"experts": [{"id": row[0], "name": row[1]} for row in rows]})
 
+#Lấy danh sách khách hàng, hỗ trợ lọc
 @app.route('/get-customers', methods=['GET'])
 def get_customers():
     conn = get_db_connection()
@@ -249,7 +251,7 @@ def add_alternative():
     conn.close()
     return jsonify({"message": "Alternative added successfully"}), 201
 
-# ---------------- API: UPDATE ALTERNATIVES FROM CUSTOMERS ----------------
+# ---------------- API: Cập nhật các phương án từ khách hàngg ----------------
 @app.route('/update-alternatives-from-customers', methods=['POST'])
 def update_alternatives_from_customers():
     try:
@@ -263,7 +265,7 @@ def update_alternatives_from_customers():
             return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
         cursor = conn.cursor()
 
-        # Bước 1: Xóa các bảng liên quan trước để tránh vi phạm ràng buộc khóa ngoại
+        #  Xóa các bảng liên quan trước để tránh vi phạm ràng buộc khóa ngoại
         logger.info("Bắt đầu xóa dữ liệu từ các bảng liên quan")
         cursor.execute("DELETE FROM alternative_comparisons")
         cursor.execute("DELETE FROM criteria_weights")
@@ -272,14 +274,14 @@ def update_alternatives_from_customers():
         cursor.execute("DELETE FROM criteria_matrix")  # Thêm xóa criteria_matrix
         logger.info("Đã xóa dữ liệu từ các bảng liên quan")
 
-        # Bước 2: Đặt lại is_selected_for_ahp về 0 chỉ cho các khách hàng không có trong customer_ids
+        #  Đặt lại is_selected_for_ahp về 0 chỉ cho các khách hàng không có trong customer_ids
         logger.info("Đặt lại is_selected_for_ahp cho các khách hàng không được chọn")
         placeholders = ','.join(['%s'] * len(customer_ids))
         query = f"UPDATE customers SET is_selected_for_ahp = 0 WHERE id NOT IN ({placeholders})"
         cursor.execute(query, tuple(customer_ids))
         logger.info(f"Số bản ghi được cập nhật trong customers (is_selected_for_ahp): {cursor.rowcount}")
 
-        # Bước 3: Kiểm tra và thêm các khách hàng được chọn vào alternatives
+        #  Kiểm tra và thêm các khách hàng được chọn vào alternatives
         logger.info(f"Kiểm tra customer_ids: {customer_ids}")
         query = f"SELECT id, name FROM customers WHERE id IN ({placeholders})"
         cursor.execute(query, tuple(customer_ids))
@@ -382,15 +384,16 @@ def save_criteria_matrix():
  
 @app.route('/calculate-criteria-weights', methods=['POST'])
 def calculate_criteria_weights():
+    # Nhận và kiểm tra dữ liệu đầu vào
     try:
         data = request.get_json()
         if 'comparison_matrix' not in data or 'customer_id' not in data or 'expert_id' not in data:
             return jsonify({"error": "Thiếu tham số comparison_matrix, customer_id hoặc expert_id"}), 400
-
+    # Chuyển đổi ma trận
         matrix = np.array(data['comparison_matrix'], dtype=float)
         customer_id = data['customer_id']
         expert_id = data['expert_id']
-
+    # Kiểm tra ma trận
         if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
             return jsonify({"error": "Comparison matrix phải là ma trận vuông"}), 400
 
@@ -400,10 +403,11 @@ def calculate_criteria_weights():
         col_sum = matrix.sum(axis=0)
         if np.any(col_sum == 0):
             return jsonify({"error": "Ma trận chứa cột có tổng bằng 0, không thể chuẩn hóa"}), 400
-
+    # Chuẩn hóa ma trận và tính trọng số
+ 
         normalized_matrix = matrix / col_sum
         weights = normalized_matrix.mean(axis=1)
-
+    # Kiểm tra độ nhất quán
         if np.any(weights == 0):
             return jsonify({"error": "Trọng số chứa giá trị 0, không thể tính Consistency Ratio"}), 400
 
@@ -411,7 +415,7 @@ def calculate_criteria_weights():
         weighted_sum = matrix.dot(weights)
         lambda_max = np.sum(weighted_sum / weights) / n
         CI = (lambda_max - n) / (n - 1)
-
+# giá trị Random Index (RI
         RI_dict = {1: 0.0, 2: 0.0, 3: 0.58, 4: 0.90, 5: 1.12, 6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45}
         RI = RI_dict.get(n, 1.49)
         CR = CI / RI if RI != 0 else 0
@@ -500,7 +504,8 @@ def calculate_alternative_scores():
                 "error": f"Các phương án với ID {missing_ids} không tồn tại trong bảng alternatives"
             }), 400
 
-        # Khởi tạo ma trận
+        # Khởi tạo ma trận so sánh đôi
+        # Khởi tạo ma trận vuông n x n với tất cả phần tử là 1
         matrix = np.ones((n, n))
         for comp in comparisons:
             alt1_id = comp['alt1_id']

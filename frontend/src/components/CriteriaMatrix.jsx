@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import * as XLSX from "xlsx";
 import {
   getCriteria,
   calculateCriteriaWeights,
@@ -18,8 +19,8 @@ const CriteriaMatrix = ({
   disabled,
   customerId,
   expertId,
+  criteria,
 }) => {
-  const [criteria, setCriteria] = useState([]);
   const [matrix, setMatrix] = useState([]);
   const [loading, setLoading] = useState(true);
   const [calculating, setCalculating] = useState(false);
@@ -27,6 +28,7 @@ const CriteriaMatrix = ({
   const [results, setResults] = useState(null);
   const [consistencyError, setConsistencyError] = useState(null);
   const [successMessage, setSuccessMessage] = useState("");
+  const [fileName, setFileName] = useState("");
 
   // Mảng màu cho biểu đồ
   const COLORS = [
@@ -41,6 +43,7 @@ const CriteriaMatrix = ({
     "#F472B6",
   ];
 
+  // Các giá trị có thể chọn trong dropdown
   const dropdownOptions = [
     1,
     2,
@@ -61,73 +64,84 @@ const CriteriaMatrix = ({
     1 / 9,
   ];
 
+  // Hàm định dạng hiển thị giá trị
   const formatValue = (value) => {
-    if (value === 1 / 2) return "1/2";
-    if (value === 1 / 3) return "1/3";
-    if (value === 1 / 4) return "1/4";
-    if (value === 1 / 5) return "1/5";
-    if (value === 1 / 6) return "1/6";
-    if (value === 1 / 7) return "1/7";
-    if (value === 1 / 8) return "1/8";
-    if (value === 1 / 9) return "1/9";
-    return value.toString();
-  };
+    if (!value) return "0";
 
-  const decimalToFormattedString = (decimal) => {
-    const reciprocal = 1 / decimal;
-    const tolerance = 1.0e-6;
+    // Xử lý giá trị phân số chính xác
+    if (Math.abs(value - 1 / 2) < 0.001) return "1/2";
+    if (Math.abs(value - 1 / 3) < 0.001) return "1/3";
+    if (Math.abs(value - 1 / 4) < 0.001) return "1/4";
+    if (Math.abs(value - 1 / 5) < 0.001) return "1/5";
+    if (Math.abs(value - 1 / 6) < 0.001) return "1/6";
+    if (Math.abs(value - 1 / 7) < 0.001) return "1/7";
+    if (Math.abs(value - 1 / 8) < 0.001) return "1/8";
+    if (Math.abs(value - 1 / 9) < 0.001) return "1/9";
 
-    for (let i = 1; i <= 9; i++) {
-      if (Math.abs(decimal - i) < tolerance) return i.toString();
-      if (Math.abs(reciprocal - i) < tolerance) return `1/${i}`;
+    // Xử lý các giá trị số nguyên
+    if (Number.isInteger(value)) return value.toString();
+
+    // Xử lý các giá trị thập phân khớp với phân số
+    for (const option of dropdownOptions) {
+      if (Math.abs(value - option) < 0.001) {
+        return formatValue(option);
+      }
     }
 
-    let h1 = 1,
-      h2 = 0,
-      k1 = 0,
-      k2 = 1,
-      b = decimal;
-    do {
-      const a = Math.floor(b);
-      let temp = h1;
-      h1 = a * h1 + h2;
-      h2 = temp;
-      temp = k1;
-      k1 = a * k1 + k2;
-      k2 = temp;
-      b = 1 / (b - a);
-    } while (Math.abs(decimal - h1 / k1) > decimal * tolerance);
+    return value.toFixed(4);
+  };
 
-    if (k1 === 1) return h1.toString();
-    return `${h1}/${k1}`;
+  // Hàm tìm giá trị phân số thích hợp từ số thập phân
+  const findClosestFraction = (decimal) => {
+    if (!decimal || decimal === 0) return "";
+
+    // Kiểm tra các giá trị phân số phổ biến với độ chính xác cao hơn
+    for (const option of dropdownOptions) {
+      if (Math.abs(decimal - option) < 0.001) {
+        return option;
+      }
+    }
+
+    // Nếu không tìm thấy giá trị phù hợp, trả về giá trị thô
+    return decimal;
+  };
+
+  // Hàm chuyển đổi giá trị từ chuỗi phân số sang số thập phân
+  const parseMatrixValue = (value) => {
+    if (typeof value === "number") return value;
+    if (typeof value !== "string") return 0;
+
+    // Nếu là chuỗi phân số như "1/3", chuyển thành số
+    if (value.includes("/")) {
+      const [numerator, denominator] = value.split("/").map(parseFloat);
+      if (denominator === 0 || isNaN(numerator) || isNaN(denominator)) {
+        return 0;
+      }
+      return numerator / denominator;
+    }
+
+    // Nếu là số dưới dạng chuỗi, chuyển thành số
+    const parsed = parseFloat(value);
+    return isNaN(parsed) ? 0 : parsed;
   };
 
   useEffect(() => {
-    const fetchCriteria = async () => {
-      try {
-        setLoading(true);
-        const criteriaData = await getCriteria();
-        setCriteria(criteriaData);
-
-        const size = criteriaData.length;
-        const initialMatrix = Array(size)
-          .fill()
-          .map((_, i) =>
-            Array(size)
-              .fill()
-              .map((_, j) => (i === j ? 1 : 0))
-          );
-        setMatrix(initialMatrix);
-        setLoading(false);
-      } catch (err) {
-        setError("Không thể tải danh sách tiêu chí");
-        console.error("Error fetching criteria:", err);
-        setLoading(false);
-      }
-    };
-
-    fetchCriteria();
-  }, []);
+    if (criteria && criteria.length > 0) {
+      const size = criteria.length;
+      const initialMatrix = Array(size)
+        .fill()
+        .map((_, i) =>
+          Array(size)
+            .fill()
+            .map((_, j) => (i === j ? 1 : 0))
+        );
+      setMatrix(initialMatrix);
+      setLoading(false);
+    } else {
+      setError("Không có tiêu chí nào được cung cấp");
+      setLoading(false);
+    }
+  }, [criteria]);
 
   const handleMatrixChange = (rowIndex, colIndex, value) => {
     const newMatrix = [...matrix];
@@ -153,7 +167,6 @@ const CriteriaMatrix = ({
   };
 
   const handleCalculate = async () => {
-    // Kiểm tra customerId và expertId
     if (customerId === undefined || expertId === undefined) {
       setError(
         "Vui lòng chọn khách hàng và chuyên gia trước khi tính trọng số"
@@ -164,7 +177,6 @@ const CriteriaMatrix = ({
     const size = criteria.length;
     let isComplete = true;
 
-    // Kiểm tra ma trận đầy đủ giá trị
     for (let i = 0; i < size; i++) {
       for (let j = 0; j < size; j++) {
         if (i !== j && (matrix[i][j] <= 0 || matrix[i][j] === undefined)) {
@@ -186,16 +198,13 @@ const CriteriaMatrix = ({
       setConsistencyError(null);
       setSuccessMessage("");
 
-      // Lưu ma trận trước khi tính toán trọng số
       try {
         await saveCriteriaMatrix(matrix, customerId, expertId);
         setSuccessMessage("Lưu ma trận và tính toán trọng số thành công!");
       } catch (saveErr) {
         setError("Lưu ma trận thất bại: " + saveErr.message);
-        // Tiếp tục tính toán trọng số ngay cả khi lưu thất bại
       }
 
-      // Tính toán trọng số
       const result = await calculateCriteriaWeights({
         comparison_matrix: matrix,
         customer_id: customerId,
@@ -240,6 +249,82 @@ const CriteriaMatrix = ({
     }
   };
 
+  const handleImportMatrix = (importedMatrix) => {
+    if (disabled) {
+      setError("Chức năng nhập file bị vô hiệu hóa.");
+      return;
+    }
+
+    const size = criteria.length;
+    if (
+      importedMatrix.length !== size ||
+      importedMatrix.some((row) => row.length !== size)
+    ) {
+      setError("Kích thước ma trận không khớp với số tiêu chí");
+      return;
+    }
+
+    // Kiểm tra giá trị hợp lệ (số dương, đối xứng nghịch đảo với sai số nhỏ)
+    const isValid = importedMatrix.every((row, i) =>
+      row.every((value, j) => {
+        if (i === j) return value === 1;
+        if (!value || value <= 0 || value > 9) return false;
+        const reciprocal = importedMatrix[j][i];
+        return Math.abs(value - 1 / reciprocal) < 0.01; // Chấp nhận sai số 0.01
+      })
+    );
+
+    if (!isValid) {
+      setError(
+        "Ma trận không hợp lệ: Vui lòng kiểm tra giá trị và tính đối xứng"
+      );
+      return;
+    }
+
+    setMatrix(importedMatrix);
+    setFileName("");
+    setError(null);
+    setConsistencyError(null);
+  };
+
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setFileName(file.name);
+    setError(null);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        console.log("Danh sách sheet trong file:", workbook.SheetNames); // Debug
+
+        const sheetName = workbook.SheetNames.find((name) =>
+          name.toLowerCase().includes("criteria comparison matrix")
+        );
+        if (!sheetName) {
+          setError("Không tìm thấy sheet cho ma trận tiêu chí");
+          return;
+        }
+
+        const sheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        const matrixData = jsonData
+          .slice(1)
+          .map((row) => row.slice(1).map(parseMatrixValue));
+        handleImportMatrix(matrixData);
+      } catch (err) {
+        setError("Không thể đọc file Excel: " + err.message);
+      }
+    };
+    reader.onerror = () => {
+      setError("Lỗi khi đọc file Excel");
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   // Chuẩn bị dữ liệu cho biểu đồ tròn
   const chartData = results
     ? criteria
@@ -251,12 +336,19 @@ const CriteriaMatrix = ({
             value: weight,
           };
         })
-        .filter((item) => item.value > 0) // Lọc bỏ các giá trị 0
+        .filter((item) => item.value > 0)
     : [];
 
   if (loading) {
     return <div className="p-4 text-center">Đang tải tiêu chí...</div>;
   }
+
+  // Hàm để xác định giá trị hiển thị trong dropdown
+  const getSelectedValue = (rowIndex, colIndex) => {
+    const value = matrix[rowIndex][colIndex];
+    if (!value) return "";
+    return findClosestFraction(value);
+  };
 
   return (
     <div className="bg-white p-6 rounded-lg shadow-md mb-8">
@@ -296,6 +388,24 @@ const CriteriaMatrix = ({
         </div>
       )}
 
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Nhập ma trận từ file Excel
+        </label>
+        <input
+          type="file"
+          accept=".xlsx, .xls"
+          onChange={handleFileUpload}
+          disabled={disabled}
+          className={`block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 ${
+            disabled ? "cursor-not-allowed opacity-50" : ""
+          }`}
+        />
+        {fileName && (
+          <p className="mt-2 text-sm text-gray-600">Đã chọn: {fileName}</p>
+        )}
+      </div>
+
       <div className="overflow-x-auto">
         <table className="min-w-full bg-white border border-gray-300">
           <thead>
@@ -326,7 +436,7 @@ const CriteriaMatrix = ({
                       <span className="text-center block text-gray-500">1</span>
                     ) : rowIndex < colIndex ? (
                       <select
-                        value={matrix[rowIndex][colIndex] || ""}
+                        value={getSelectedValue(rowIndex, colIndex)}
                         onChange={(e) =>
                           handleMatrixChange(rowIndex, colIndex, e.target.value)
                         }
@@ -347,7 +457,7 @@ const CriteriaMatrix = ({
                     ) : (
                       <span className="text-center block text-gray-500">
                         {matrix[rowIndex][colIndex]
-                          ? decimalToFormattedString(matrix[rowIndex][colIndex])
+                          ? formatValue(matrix[rowIndex][colIndex])
                           : "0"}
                       </span>
                     )}
