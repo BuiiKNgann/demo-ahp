@@ -27,6 +27,49 @@ const handleApiError = (error, defaultMessage) => {
   }
 };
 
+// Hàm mới: Lấy dữ liệu độ nhất quán của ma trận tiêu chí
+export const getConsistencyMetricsCriteria = async ({
+  customer_id,
+  expert_id,
+}) => {
+  try {
+    const response = await axiosInstance.get(
+      "/get-consistency-metrics-criteria",
+      {
+        params: { customer_id, expert_id },
+      }
+    );
+    return response.data.consistency_metrics || [];
+  } catch (error) {
+    return handleApiError(
+      error,
+      "Không thể lấy dữ liệu độ nhất quán của ma trận tiêu chí"
+    );
+  }
+};
+
+// Hàm mới: Lấy dữ liệu độ nhất quán của ma trận phương án
+export const getConsistencyMetricsAlternatives = async ({
+  customer_id,
+  expert_id,
+  criterion_id,
+}) => {
+  try {
+    const response = await axiosInstance.get(
+      "/get-consistency-metrics-alternatives",
+      {
+        params: { customer_id, expert_id, criterion_id },
+      }
+    );
+    return response.data.consistency_metrics || [];
+  } catch (error) {
+    return handleApiError(
+      error,
+      "Không thể lấy dữ liệu độ nhất quán của ma trận phương án"
+    );
+  }
+};
+
 // Hàm mới: Cập nhật bảng alternatives từ danh sách customer_ids
 export const updateAlternativesFromCustomers = async (customerIds) => {
   try {
@@ -107,39 +150,57 @@ export const calculateCriteriaWeights = async (payload) => {
   }
 };
 
-export const calculateAlternativeScores = async (payload) => {
+// export const calculateAlternativeScores = async (payload) => {
+//   try {
+//     // Lấy danh sách alternatives hiện tại
+//     const alternatives = await getAlternatives();
+//     const validAltIds = new Set(alternatives.map((alt) => alt.id));
+
+//     // Lọc comparisons để chỉ giữ lại các cặp có alt_ids tồn tại trong alternatives
+//     const filteredComparisons = payload.comparisons.filter(
+//       (comp) => validAltIds.has(comp.alt1_id) && validAltIds.has(comp.alt2_id)
+//     );
+
+//     if (filteredComparisons.length === 0) {
+//       throw new Error(
+//         "Không có phương án hợp lệ để so sánh. Vui lòng cập nhật danh sách phương án."
+//       );
+//     }
+
+//     // Cập nhật payload với danh sách comparisons đã lọc
+//     const updatedPayload = {
+//       ...payload,
+//       comparisons: filteredComparisons,
+//     };
+
+//     const response = await axiosInstance.post(
+//       "/calculate-alternative-scores",
+//       updatedPayload
+//     );
+//     return response.data;
+//   } catch (error) {
+//     return handleApiError(error, "Không thể tính toán điểm số phương án");
+//   }
+// };
+
+export const calculateAlternativeScores = async ({
+  customer_id,
+  expert_id,
+  criteria_id,
+  comparisons,
+}) => {
   try {
-    // Lấy danh sách alternatives hiện tại
-    const alternatives = await getAlternatives();
-    const validAltIds = new Set(alternatives.map((alt) => alt.id));
-
-    // Lọc comparisons để chỉ giữ lại các cặp có alt_ids tồn tại trong alternatives
-    const filteredComparisons = payload.comparisons.filter(
-      (comp) => validAltIds.has(comp.alt1_id) && validAltIds.has(comp.alt2_id)
-    );
-
-    if (filteredComparisons.length === 0) {
-      throw new Error(
-        "Không có phương án hợp lệ để so sánh. Vui lòng cập nhật danh sách phương án."
-      );
-    }
-
-    // Cập nhật payload với danh sách comparisons đã lọc
-    const updatedPayload = {
-      ...payload,
-      comparisons: filteredComparisons,
-    };
-
-    const response = await axiosInstance.post(
-      "/calculate-alternative-scores",
-      updatedPayload
-    );
+    const response = await axiosInstance.post("/calculate-alternative-scores", {
+      customer_id,
+      expert_id,
+      criteria_id,
+      comparisons,
+    });
     return response.data;
   } catch (error) {
-    return handleApiError(error, "Không thể tính toán điểm số phương án");
+    return handleApiError(error, "Không thể tính điểm phương án");
   }
 };
-
 export const getFinalAlternativeScores = async (params) => {
   try {
     console.log("Getting final scores with params:", params);
@@ -160,13 +221,16 @@ export const getFinalAlternativeScores = async (params) => {
     throw handleApiError(error, "Không thể lấy kết quả cuối cùng");
   }
 };
+
 export const getCriteriaMatrix = async ({ customer_id, expert_id }) => {
-  const response = await fetch(
-    `http://localhost:5000/get-criteria-matrix?customer_id=${customer_id}&expert_id=${expert_id}`
-  );
-  const data = await response.json();
-  if (data.error) throw new Error(data.error);
-  return data.matrix;
+  try {
+    const response = await axiosInstance.get("/get-criteria-matrix", {
+      params: { customer_id, expert_id },
+    });
+    return response.data.matrix || [];
+  } catch (error) {
+    return handleApiError(error, "Không thể lấy ma trận tiêu chí");
+  }
 };
 
 export const getAlternativeComparisons = async ({
@@ -174,10 +238,24 @@ export const getAlternativeComparisons = async ({
   expert_id,
   criterion_id,
 }) => {
-  const response = await fetch(
-    `http://localhost:5000/get-alternative-comparisons?customer_id=${customer_id}&expert_id=${expert_id}&criterion_id=${criterion_id}`
-  );
-  const data = await response.json();
-  if (data.error) throw new Error(data.error);
-  return data.comparisons;
+  try {
+    const response = await axiosInstance.get("/get-alternative-comparisons", {
+      params: { customer_id, expert_id, criterion_id },
+    });
+    return response.data.comparisons || [];
+  } catch (error) {
+    return handleApiError(error, "Không thể lấy dữ liệu so sánh phương án");
+  }
+};
+
+export const getConsistencyVectorData = async ({ customer_id, expert_id }) => {
+  try {
+    const response = await axiosInstance.post("/get-consistency-vector-data", {
+      customer_id,
+      expert_id,
+    });
+    return response.data;
+  } catch (error) {
+    return handleApiError(error, "Không thể lấy dữ liệu Consistency Vector");
+  }
 };

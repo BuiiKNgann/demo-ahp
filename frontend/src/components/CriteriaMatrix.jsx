@@ -7,7 +7,11 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { calculateCriteriaWeights, saveCriteriaMatrix } from "../services/api"; // Import from your api.js
+import {
+  calculateCriteriaWeights,
+  saveCriteriaMatrix,
+  getConsistencyVectorData,
+} from "../services/api";
 
 const CriteriaMatrix = ({
   onWeightsCalculated,
@@ -16,6 +20,7 @@ const CriteriaMatrix = ({
   expertId,
   criteria,
   importedMatrix,
+  consistencyMetrics,
 }) => {
   const [matrix, setMatrix] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +29,8 @@ const CriteriaMatrix = ({
   const [results, setResults] = useState(null);
   const [consistencyError, setConsistencyError] = useState(null);
   const [successMessage, setSuccessMessage] = useState("");
+  const [consistencyVectorData, setConsistencyVectorData] = useState(null);
+  const [matrixDotDetails, setMatrixDotDetails] = useState(null);
 
   const COLORS = [
     "#0088FE",
@@ -107,7 +114,6 @@ const CriteriaMatrix = ({
             .map((_, j) => (i === j ? 1 : 0))
         );
 
-      // Nếu có ma trận đã import, sử dụng nó
       if (importedMatrix) {
         if (
           importedMatrix.length === size &&
@@ -143,6 +149,62 @@ const CriteriaMatrix = ({
     }
   }, [criteria, importedMatrix]);
 
+  // useEffect(() => {
+  //   const fetchConsistencyVectorData = async () => {
+  //     if (customerId && expertId && results) {
+  //       try {
+  //         const response = await getConsistencyVectorData({
+  //           customer_id: customerId,
+  //           expert_id: expertId,
+  //         });
+  //         setConsistencyVectorData(response || []);
+  //         setMatrixDotDetails(
+  //           results.matrix_dot_details || response.matrix_dot_details || []
+  //         );
+  //       } catch (err) {
+  //         setError(`Không thể lấy dữ liệu Consistency Vector: ${err.message}`);
+  //         setConsistencyVectorData([]);
+  //         setMatrixDotDetails([]);
+  //       }
+  //     } else {
+  //       setConsistencyVectorData(null);
+  //       setMatrixDotDetails(null);
+  //     }
+  //   };
+  //   fetchConsistencyVectorData();
+  // }, [customerId, expertId, results]);
+
+  useEffect(() => {
+    const fetchConsistencyVectorData = async () => {
+      if (customerId && expertId && results) {
+        try {
+          const response = await getConsistencyVectorData({
+            customer_id: customerId,
+            expert_id: expertId,
+          });
+          console.log("Response from getConsistencyVectorData:", response);
+          setConsistencyVectorData(response.consistency_vector_data || []);
+          setMatrixDotDetails(response.matrix_dot_details || []);
+        } catch (err) {
+          setError(`Không thể lấy dữ liệu Consistency Vector: ${err.message}`);
+          setConsistencyVectorData([]);
+          setMatrixDotDetails([]);
+        }
+      } else {
+        setConsistencyVectorData(null);
+        setMatrixDotDetails(null);
+      }
+    };
+    fetchConsistencyVectorData();
+  }, [customerId, expertId, results]);
+
+  // Tạo ánh xạ từ criterion_name đến dữ liệu consistency
+  const consistencyMap = consistencyVectorData
+    ? consistencyVectorData.reduce((map, item) => {
+        map[item.criterion] = item;
+        return map;
+      }, {})
+    : {};
   const handleMatrixChange = (rowIndex, colIndex, value) => {
     const newMatrix = [...matrix];
     const parsedValue = parseMatrixValue(value);
@@ -195,7 +257,6 @@ const CriteriaMatrix = ({
       setConsistencyError(null);
       setSuccessMessage("");
 
-      // Lưu ma trận tiêu chí
       try {
         await saveCriteriaMatrix(matrix, customerId, expertId);
         setSuccessMessage("Lưu ma trận và tính toán trọng số thành công!");
@@ -203,7 +264,6 @@ const CriteriaMatrix = ({
         setError("Lưu ma trận thất bại: " + saveErr.message);
       }
 
-      // Tính trọng số tiêu chí
       const result = await calculateCriteriaWeights({
         comparison_matrix: matrix,
         customer_id: customerId,
@@ -236,6 +296,9 @@ const CriteriaMatrix = ({
         setResults({
           weights: err.response.data.weights,
           CR: err.response.data.CR,
+          lambda_max: err.response.data.lambda_max,
+          CI: err.response.data.CI,
+          matrix_dot_details: err.response.data.matrix_dot_details || [],
         });
       }
 
@@ -255,6 +318,14 @@ const CriteriaMatrix = ({
         })
         .filter((item) => item.value > 0)
     : [];
+
+  const crData =
+    consistencyMetrics ||
+    (results && {
+      lambda_max: results.lambda_max,
+      CI: results.CI,
+      CR: results.CR,
+    });
 
   if (loading) {
     return <div className="p-4 text-center">Đang tải tiêu chí...</div>;
@@ -404,13 +475,19 @@ const CriteriaMatrix = ({
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-2">
             {criteria.map((criterion, index) => {
               const criteriaKey = `C${index + 1}`;
-              const weight =
-                results.weights[criteriaKey] || results.weights[criterion.id];
+              const criterionWeight = results.weights[criteriaKey] || 0;
 
               return (
-                <div key={criterion.id} className="bg-gray-50 p-2 rounded">
-                  <span className="font-medium">{criterion.name}: </span>
-                  <span>{weight ? weight.toFixed(4) : "0"}</span>
+                <div
+                  key={criterion.id}
+                  className="bg-gray-50 p-2 rounded border border-gray-200"
+                >
+                  <span className="font-medium text-gray-700">
+                    {criterion.name}:{" "}
+                  </span>
+                  <span className="text-blue-600">
+                    {criterionWeight.toFixed(4)}
+                  </span>
                 </div>
               );
             })}
@@ -467,15 +544,145 @@ const CriteriaMatrix = ({
             )}
           </div>
 
+          {matrixDotDetails &&
+            matrixDotDetails.length > 0 &&
+            consistencyVectorData &&
+            consistencyVectorData.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-lg font-medium mb-2">
+                  Chi tiết phép nhân ma trận so sánh cặp với vector trọng số
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full bg-white border border-gray-300">
+                    <thead>
+                      <tr className="bg-gray-100">
+                        <th className="py-2 px-4 border-b border-r border-gray-300">
+                          Tiêu chí
+                        </th>
+                        {criteria.map((criterion) => (
+                          <th
+                            key={criterion.id}
+                            className="py-2 px-4 border-b border-r border-gray-300"
+                          >
+                            {criterion.name}
+                          </th>
+                        ))}
+                        <th className="py-2 px-4 border-b border-r border-gray-300">
+                          Weighted Sum Value
+                        </th>
+                        <th className="py-2 px-4 border-b border-r border-gray-300">
+                          Criteria Weights
+                        </th>
+                        <th className="py-2 px-4 border-b border-gray-300">
+                          Consistency Vector
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {matrixDotDetails.map((row, rowIndex) => {
+                        const criterionName =
+                          criteria[rowIndex]?.name ||
+                          `Tiêu chí ${rowIndex + 1}`;
+                        const consistencyData =
+                          consistencyMap[criterionName] || {};
+                        return (
+                          <tr key={rowIndex}>
+                            <td className="py-2 px-4 border-b border-r border-gray-300">
+                              {criterionName}
+                            </td>
+                            {row.map((value, colIndex) => (
+                              <td
+                                key={colIndex}
+                                className="py-2 px-4 border-b border-r border-gray-300 "
+                              >
+                                {value.toFixed(4)}
+                              </td>
+                            ))}
+                            <td className="py-2 px-4 border-b border-r border-gray-300 text-blue-700">
+                              {consistencyData.weightedSum?.toFixed(4) ||
+                                "Chưa có dữ liệu"}
+                            </td>
+                            <td className="py-2 px-4 border-b border-r border-gray-300 text-green-700">
+                              {consistencyData.criteriaWeight?.toFixed(4) ||
+                                "Chưa có dữ liệu"}
+                            </td>
+                            <td className="py-2 px-4 border-b border-gray-300 text-purple-700">
+                              {consistencyData.consistencyVector?.toFixed(4) ||
+                                "Chưa có dữ liệu"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+          {crData && (
+            <div className="mt-6">
+              <h3 className="text-lg font-medium mb-2">
+                Tính tỷ số nhất quán (Consistency Ratio)
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="min-w-full bg-white border border-gray-200 rounded-lg shadow-sm">
+                  <thead>
+                    <tr className="bg-blue-50 text-gray-700">
+                      <th className="py-3 px-6 border-b border-gray-200 text-left font-semibold">
+                        Chỉ số
+                      </th>
+                      <th className="py-3 px-6 border-b border-gray-200 text-left font-semibold">
+                        Giá trị
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="hover:bg-gray-50">
+                      <td className="py-3 px-6 border-b border-gray-200 text-gray-600 font-medium">
+                        λ_max
+                      </td>
+                      <td className="py-3 px-6 border-b border-gray-200 text-blue-600 font-medium">
+                        {crData.lambda_max.toFixed(4)}
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-gray-50">
+                      <td className="py-3 px-6 border-b border-gray-200 text-gray-600 font-medium">
+                        CI (Consistency Index)
+                      </td>
+                      <td className="py-3 px-6 border-b border-gray-200 text-blue-600 font-medium">
+                        {crData.CI.toFixed(4)}
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-gray-50">
+                      <td className="py-3 px-6 border-b border-gray-200 text-gray-600 font-medium">
+                        CR (Consistency Ratio)
+                      </td>
+                      <td className="py-3 px-6 border-b border-gray-200 text-blue-600 font-medium">
+                        {crData.CR.toFixed(4)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-2 text-sm text-gray-500 italic">
+                Ghi chú: CR nên ≤ 0.1 để ma trận được coi là nhất quán.
+              </p>
+            </div>
+          )}
+
           <div className="mt-3 pt-3 border-t border-gray-200">
             <div className="flex justify-between">
-              <span>Tỷ số nhất quán (CR):</span>
+              <span className="text-gray-700 font-medium">
+                Tỷ số nhất quán (CR):
+              </span>
               <span
                 className={`font-medium ${
-                  results.CR > 0.1 ? "text-red-600" : "text-green-600"
+                  results && results.CR > 0.1
+                    ? "text-red-600"
+                    : "text-green-600"
                 }`}
               >
-                {results.CR.toFixed(4)}
+                {results ? results.CR.toFixed(4) : "Chưa tính"}
               </span>
             </div>
           </div>

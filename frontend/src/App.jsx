@@ -11,8 +11,11 @@ import {
   getFinalAlternativeScores,
   getAlternatives,
   updateAlternativesFromCustomers,
+  getConsistencyMetricsCriteria,
+  getConsistencyMetricsAlternatives,
 } from "./services/api";
 import * as XLSX from "xlsx";
+
 function App() {
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [selectedExpertId, setSelectedExpertId] = useState(null);
@@ -28,8 +31,10 @@ function App() {
   const [resultError, setResultError] = useState(null);
   const [validAlternatives, setValidAlternatives] = useState([]);
   const [matrixSaved, setMatrixSaved] = useState(false);
-  const [criteriaCR, setCriteriaCR] = useState(null);
-  const [alternativeCRs, setAlternativeCRs] = useState({});
+  const [criteriaConsistencyMetrics, setCriteriaConsistencyMetrics] =
+    useState(null);
+  const [alternativeConsistencyMetrics, setAlternativeConsistencyMetrics] =
+    useState({});
   const [importedMatrices, setImportedMatrices] = useState({
     criteriaMatrix: null,
     alternativeMatrices: {},
@@ -81,6 +86,58 @@ function App() {
     fetchCriteria();
   }, []);
 
+  // Lấy dữ liệu độ nhất quán của ma trận tiêu chí
+  useEffect(() => {
+    const fetchCriteriaConsistencyMetrics = async () => {
+      if (selectedCustomerIds.length > 0 && selectedExpertId) {
+        try {
+          const metrics = await getConsistencyMetricsCriteria({
+            customer_id: selectedCustomerIds[0],
+            expert_id: selectedExpertId,
+          });
+          if (metrics.length > 0) {
+            setCriteriaConsistencyMetrics(metrics[0]); // Lấy bản ghi mới nhất
+          }
+        } catch (err) {
+          console.error("Error fetching criteria consistency metrics:", err);
+        }
+      }
+    };
+    fetchCriteriaConsistencyMetrics();
+  }, [selectedCustomerIds, selectedExpertId]);
+
+  // Lấy dữ liệu độ nhất quán của ma trận phương án
+  useEffect(() => {
+    const fetchAlternativeConsistencyMetrics = async () => {
+      if (
+        selectedCustomerIds.length > 0 &&
+        selectedExpertId &&
+        criteria.length > 0
+      ) {
+        const metricsByCriteria = {};
+        for (const criterion of criteria) {
+          try {
+            const metrics = await getConsistencyMetricsAlternatives({
+              customer_id: selectedCustomerIds[0],
+              expert_id: selectedExpertId,
+              criterion_id: criterion.id,
+            });
+            if (metrics.length > 0) {
+              metricsByCriteria[criterion.id] = metrics[0]; // Lấy bản ghi mới nhất
+            }
+          } catch (err) {
+            console.error(
+              `Error fetching alternative consistency metrics for criterion ${criterion.id}:`,
+              err
+            );
+          }
+        }
+        setAlternativeConsistencyMetrics(metricsByCriteria);
+      }
+    };
+    fetchAlternativeConsistencyMetrics();
+  }, [selectedCustomerIds, selectedExpertId, criteria]);
+
   const handleCustomerSelect = useCallback((customers) => {
     console.log("handleCustomerSelect:", customers);
     setSelectedCustomers([...customers]);
@@ -91,8 +148,8 @@ function App() {
     setFinalScores([]);
     setMatrixSaved(false);
     setResultError(null);
-    setCriteriaCR(null);
-    setAlternativeCRs({});
+    setCriteriaConsistencyMetrics(null);
+    setAlternativeConsistencyMetrics({});
     setImportedMatrices({ criteriaMatrix: null, alternativeMatrices: {} });
   }, []);
 
@@ -106,15 +163,19 @@ function App() {
     setFinalScores([]);
     setMatrixSaved(false);
     setResultError(null);
-    setCriteriaCR(null);
-    setAlternativeCRs({});
+    setCriteriaConsistencyMetrics(null);
+    setAlternativeConsistencyMetrics({});
     setImportedMatrices({ criteriaMatrix: null, alternativeMatrices: {} });
   }, []);
 
   const handleCriteriaWeightsCalculated = useCallback((result) => {
     console.log("handleCriteriaWeightsCalculated:", result);
     setCriteriaResults(result);
-    setCriteriaCR(result.CR);
+    setCriteriaConsistencyMetrics({
+      lambda_max: result.lambda_max,
+      CI: result.CI,
+      CR: result.CR,
+    });
     if (result.CR <= 0.1) {
       setCriteriaWeights(result.weights || {});
       setCriteriaEvaluated(true);
@@ -127,9 +188,13 @@ function App() {
   const handleAlternativeScoresCalculated = useCallback(
     (criteriaId, result) => {
       console.log("handleAlternativeScoresCalculated:", { criteriaId, result });
-      setAlternativeCRs((prev) => ({
+      setAlternativeConsistencyMetrics((prev) => ({
         ...prev,
-        [criteriaId]: result.CR,
+        [criteriaId]: {
+          lambda_max: result.lambda_max,
+          CI: result.CI,
+          CR: result.CR,
+        },
       }));
       if (result.CR <= 0.1) {
         setAlternativeScores((prev) => ({
@@ -177,15 +242,15 @@ function App() {
       return true;
     }
 
-    if (criteriaCR !== null && criteriaCR > 0.1) {
+    if (criteriaConsistencyMetrics && criteriaConsistencyMetrics.CR > 0.1) {
       return false;
     }
 
     for (let i = 0; i < currentCriteriaIndex; i++) {
       const prevCriteriaId = criteria[i].id;
       if (
-        alternativeCRs[prevCriteriaId] &&
-        alternativeCRs[prevCriteriaId] > 0.1
+        alternativeConsistencyMetrics[prevCriteriaId] &&
+        alternativeConsistencyMetrics[prevCriteriaId].CR > 0.1
       ) {
         return false;
       }
@@ -200,8 +265,11 @@ function App() {
         selectedCustomerIds.length > 0 &&
         selectedExpertId &&
         finalScores.length === 0 &&
-        criteriaCR <= 0.1 &&
-        Object.values(alternativeCRs).every((cr) => cr <= 0.1)
+        criteriaConsistencyMetrics &&
+        criteriaConsistencyMetrics.CR <= 0.1 &&
+        Object.values(alternativeConsistencyMetrics).every(
+          (metric) => metric.CR <= 0.1
+        )
       ) {
         console.log("Calculating final scores automatically");
         try {
@@ -236,8 +304,8 @@ function App() {
     selectedCustomerIds,
     selectedExpertId,
     finalScores.length,
-    criteriaCR,
-    alternativeCRs,
+    criteriaConsistencyMetrics,
+    alternativeConsistencyMetrics,
   ]);
 
   const handleRefreshResults = useCallback(
@@ -245,8 +313,10 @@ function App() {
       e.preventDefault();
       if (
         !allAlternativesEvaluated ||
-        criteriaCR > 0.1 ||
-        Object.values(alternativeCRs).some((cr) => cr > 0.1)
+        (criteriaConsistencyMetrics && criteriaConsistencyMetrics.CR > 0.1) ||
+        Object.values(alternativeConsistencyMetrics).some(
+          (metric) => metric.CR > 0.1
+        )
       ) {
         setResultError(
           "Vui lòng hoàn thành đánh giá tất cả ma trận với tỷ số nhất quán (CR) ≤ 10%."
@@ -282,8 +352,8 @@ function App() {
       selectedCustomerIds,
       selectedExpertId,
       allAlternativesEvaluated,
-      criteriaCR,
-      alternativeCRs,
+      criteriaConsistencyMetrics,
+      alternativeConsistencyMetrics,
     ]
   );
 
@@ -397,6 +467,7 @@ function App() {
                 disabled={criteriaEvaluated}
                 criteria={criteria}
                 importedMatrix={importedMatrices.criteriaMatrix}
+                consistencyMetrics={criteriaConsistencyMetrics}
               />
               {matrixSaved && (
                 <div className="mt-2 bg-green-100 border border-green-400 text-green-700 px-4 py-2 rounded">
@@ -429,14 +500,19 @@ function App() {
                     importedMatrix={
                       importedMatrices.alternativeMatrices[criterion.id]
                     }
+                    consistencyMetrics={
+                      alternativeConsistencyMetrics[criterion.id]
+                    }
                   />
                 ))}
               </div>
             )}
 
           {criteriaEvaluated &&
-            (criteriaCR > 0.1 ||
-              Object.values(alternativeCRs).some((cr) => cr > 0.1)) && (
+            (criteriaConsistencyMetrics?.CR > 0.1 ||
+              Object.values(alternativeConsistencyMetrics).some(
+                (metric) => metric.CR > 0.1
+              )) && (
               <div className="mt-4 p-4 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
                 Một hoặc nhiều ma trận trước đó có tỷ số nhất quán (CR) vượt quá
                 10%. Vui lòng điều chỉnh để tiếp tục.
@@ -444,8 +520,10 @@ function App() {
             )}
 
           {allAlternativesEvaluated &&
-            criteriaCR <= 0.1 &&
-            Object.values(alternativeCRs).every((cr) => cr <= 0.1) && (
+            criteriaConsistencyMetrics?.CR <= 0.1 &&
+            Object.values(alternativeConsistencyMetrics).every(
+              (metric) => metric.CR <= 0.1
+            ) && (
               <div className="mt-8">
                 <div className="flex space-x-4 mb-4">
                   <button
