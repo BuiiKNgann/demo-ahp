@@ -1230,3 +1230,5 @@ def get_consistency_vector_data():
 # ---------------- Run app ----------------
 if __name__ == '__main__':
     app.run(debug=True)
+
+    # đa day len
