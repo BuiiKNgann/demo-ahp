@@ -16,8 +16,8 @@ def get_db_connection():
         conn = mysql.connector.connect(
             host="localhost",
             user="root",
-            password="12345",
-            database="ahp_demo1"
+            password="",
+            database="ahp"
         )
         logger.info("Kết nối cơ sở dữ liệu thành công")
         return conn
