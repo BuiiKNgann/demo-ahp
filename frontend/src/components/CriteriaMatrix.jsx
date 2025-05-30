@@ -149,31 +149,6 @@ const CriteriaMatrix = ({
     }
   }, [criteria, importedMatrix]);
 
-  // useEffect(() => {
-  //   const fetchConsistencyVectorData = async () => {
-  //     if (customerId && expertId && results) {
-  //       try {
-  //         const response = await getConsistencyVectorData({
-  //           customer_id: customerId,
-  //           expert_id: expertId,
-  //         });
-  //         setConsistencyVectorData(response || []);
-  //         setMatrixDotDetails(
-  //           results.matrix_dot_details || response.matrix_dot_details || []
-  //         );
-  //       } catch (err) {
-  //         setError(`Không thể lấy dữ liệu Consistency Vector: ${err.message}`);
-  //         setConsistencyVectorData([]);
-  //         setMatrixDotDetails([]);
-  //       }
-  //     } else {
-  //       setConsistencyVectorData(null);
-  //       setMatrixDotDetails(null);
-  //     }
-  //   };
-  //   fetchConsistencyVectorData();
-  // }, [customerId, expertId, results]);
-
   useEffect(() => {
     const fetchConsistencyVectorData = async () => {
       if (customerId && expertId && results) {

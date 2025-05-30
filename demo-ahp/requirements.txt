@@ -1,5 +1,5 @@
 flask
 flask-cors
 mysql-connector-python
-numpy
-scipy
+ 
+#  pip install flask flask-cors mysql-connector-python
