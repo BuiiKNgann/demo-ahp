@@ -38,45 +38,4 @@ def matrix_dot_vector(matrix, vector):
             result[i] += matrix[i][j] * vector[j]
     return result
 
-# Nếu danh sách values rỗng hoặc có số không dương
-# Tham số: values là danh sách các số cần tính trung bình hình học.
-def geometric_mean(values):
-    """Tính trung bình hình học của một danh sách số dương """
-    # Kiểm tra xem danh sách có rỗng hay không. Nếu rỗng, trả về 0.0.
-    if not values or any(v <= 0 for v in values):
-        return 0.0
-    # Kiểm tra độ dài danh sách
-    n = len(values)
-    if n == 0:
-        return 0.0
-    
-    # Tính tích của các giá trị
-    product = 1.0
-    for v in values:
-        product *= v
-    
-    # Tính căn bậc n của tích bằng phương pháp lặp Newton
-    def nth_root(x, n):
-        if x == 0:
-            return 0.0
-        guess = x / n  # Giá trị ban đầu
-        epsilon = 1e-10  # Độ chính xác
-        while True:
-            next_guess = ((n - 1) * guess + x / (guess ** (n - 1))) / n
-            if abs(next_guess - guess) < epsilon:
-                return next_guess
-            guess = next_guess
-    
-    return nth_root(product, n)
-
-def matrix_geometric_mean(matrices):
-    """Tính trung bình hình học của các ma trận."""
-    if not matrices:
-        return []
-    n = len(matrices[0])
-    result = [[0.0] * n for _ in range(n)]
-    for i in range(n):
-        for j in range(n):
-            values = [matrix[i][j] for matrix in matrices if matrix[i][j] > 0]
-            result[i][j] = geometric_mean(values) if values else 1.0
-    return result
+#  

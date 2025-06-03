@@ -3,7 +3,7 @@ import logging
 from db import get_db_connection
 from ahp_utils import (
     matrix_sum_columns, matrix_normalize, matrix_row_means,
-    matrix_dot_vector, geometric_mean, matrix_geometric_mean
+    matrix_dot_vector, 
 )
 
 # Thiết lập logging
