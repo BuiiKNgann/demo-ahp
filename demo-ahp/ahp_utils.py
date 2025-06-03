@@ -2,7 +2,7 @@ def matrix_sum_columns(matrix):
     """Tính tổng các cột của ma trận."""
     n = len(matrix)
     col_sums = [0.0] * n
-    for j in range(n):
+    for j in range(n): 
         for i in range(n):
             col_sums[j] += matrix[i][j]
     return col_sums
@@ -14,6 +14,7 @@ def matrix_normalize(matrix, col_sums):
     for i in range(n):
         for j in range(n):
             if col_sums[j] != 0:
+    # Tính giá trị chuẩn hóa:
                 normalized[i][j] = matrix[i][j] / col_sums[j]
     return normalized
 
@@ -22,7 +23,9 @@ def matrix_row_means(matrix):
     n = len(matrix)
     means = [0.0] * n
     for i in range(n):
-        row_sum = sum(matrix[i])
+        # Tính tổng hàng
+        row_sum = sum(matrix[i]) 
+        # Tính trung bình hàng
         means[i] = row_sum / n if n > 0 else 0.0
     return means
 
@@ -35,10 +38,14 @@ def matrix_dot_vector(matrix, vector):
             result[i] += matrix[i][j] * vector[j]
     return result
 
+# Nếu danh sách values rỗng hoặc có số không dương
+# Tham số: values là danh sách các số cần tính trung bình hình học.
 def geometric_mean(values):
     """Tính trung bình hình học của một danh sách số dương """
+    # Kiểm tra xem danh sách có rỗng hay không. Nếu rỗng, trả về 0.0.
     if not values or any(v <= 0 for v in values):
         return 0.0
+    # Kiểm tra độ dài danh sách
     n = len(values)
     if n == 0:
         return 0.0

@@ -300,10 +300,10 @@ def save_criteria_matrix():
         matrix = data['matrix']
         customer_id = data['customer_id']
         expert_id = data['expert_id']
-
+# Đảm bảo matrix là một danh sách.
         if not isinstance(matrix, list) or not all(isinstance(row, list) for row in matrix):
             return jsonify({"error": "Matrix phải là một danh sách các danh sách"}), 400
-
+# Kiểm tra ma trận vuông
         n = len(matrix)
         if n == 0 or any(len(row) != n for row in matrix):
             return jsonify({"error": "Matrix phải là ma trận vuông không rỗng"}), 400
@@ -344,56 +344,47 @@ def save_criteria_matrix():
 
 # ---------------- AHP: Tính trọng số tiêu chí ----------------
 def calculate_criteria_weights():
+    # nhận một ma trận so sánh đôi
     try:
         data = request.get_json()
         if 'comparison_matrix' not in data or 'customer_id' not in data or 'expert_id' not in data:
             return jsonify({"error": "Thiếu tham số comparison_matrix, customer_id hoặc expert_id"}), 400
-
         matrix = data['comparison_matrix']
         customer_id = data['customer_id']
         expert_id = data['expert_id']
-
         # Kiểm tra ma trận vuông
         n = len(matrix)
         if n == 0 or any(len(row) != n for row in matrix):
             return jsonify({"error": "Comparison matrix phải là ma trận vuông"}), 400
-
         # Kiểm tra giá trị dương
         if any(matrix[i][j] <= 0 for i in range(n) for j in range(n)):
             return jsonify({"error": "Tất cả giá trị trong ma trận phải là số dương"}), 400
-
         # Tính tổng cột
         col_sums = matrix_sum_columns(matrix)
-
         # Chuẩn hóa ma trận
         normalized_matrix = matrix_normalize(matrix, col_sums)
-
         # Tính trọng số (trung bình hàng)
         weights = matrix_row_means(normalized_matrix)
-
         # Kiểm tra trọng số
         if any(w == 0 for w in weights):
             return jsonify({"error": "Trọng số chứa giá trị 0, không thể tính Consistency Ratio"}), 400
-
         # Tính weighted sum
         weighted_sum = matrix_dot_vector(matrix, weights)
+
 
         # Tính chi tiết phép nhân: matrix[i][j] * weights[j]
         matrix_dot_details = [[0.0] * n for _ in range(n)]
         for i in range(n):
             for j in range(n):
                 matrix_dot_details[i][j] = matrix[i][j] * weights[j]
-
         # Tính lambda_max
         lambda_max = sum(ws / w for ws, w in zip(weighted_sum, weights) if w != 0) / n if n > 0 else 0.0
-
         # Tính chỉ số nhất quán
         CI = (lambda_max - n) / (n - 1) if n > 1 else 0.0
         RI_dict = {1: 0.0, 2: 0.0, 3: 0.58, 4: 0.90, 5: 1.12, 6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45}
         RI = RI_dict.get(n, 1.49)
         CR = CI / RI if RI != 0 else 0.0
-
-        # Tính Consistency Vector
+        # Tính vector nhất quán (Consistency vector)
         consistency_vector = [ws / w if w != 0 else 0.0 for ws, w in zip(weighted_sum, weights)]
         consistency_vector_data = [
             {
@@ -430,6 +421,7 @@ def calculate_criteria_weights():
         )
         for i in range(n):
             for j in range(n):
+        # Lưu ma trận gốc vào bảng criteria_matrix
                 cursor.execute(
                     "INSERT INTO criteria_matrix (customer_id, expert_id, criterion1_id, criterion2_id, value, created_at) VALUES (%s, %s, %s, %s, %s, NOW())",
                     (customer_id, expert_id, i + 1, j + 1, float(matrix[i][j]))
@@ -446,11 +438,12 @@ def calculate_criteria_weights():
                 (customer_id, expert_id, i + 1, float(weight), float(col_sum_value), float(cv), float(ws))
             )
 
-        # Lưu consistency metrics
+
         cursor.execute(
             "DELETE FROM consistency_metrics_criteria WHERE customer_id = %s AND expert_id = %s",
             (customer_id, expert_id)
         )
+        #         # Lưu consistency metrics lambda_max, CI, CR
         cursor.execute(
             "INSERT INTO consistency_metrics_criteria (customer_id, expert_id, lambda_max, CI, CR, created_at) VALUES (%s, %s, %s, %s, %s, NOW())",
             (customer_id, expert_id, float(lambda_max), float(CI), float(CR))
@@ -544,16 +537,12 @@ def calculate_alternative_scores():
             j = alt_ids.index(alt2_id)
             matrix[i][j] = value
             matrix[j][i] = 1 / value
-
         # Tính tổng cột
         col_sums = matrix_sum_columns(matrix)
-
         # Chuẩn hóa ma trận
         norm_matrix = matrix_normalize(matrix, col_sums)
-
         # Tính trọng số (trọng số PA - trung bình hàng)
         weights = matrix_row_means(norm_matrix)
-
         # Tính weighted sum (Sum Weight)
         weighted_sum = matrix_dot_vector(matrix, weights)
 
@@ -569,18 +558,18 @@ def calculate_alternative_scores():
                     "product": float(product)
                 })
             matrix_dot_details.append(row_details)
-
         # Tính lambda_max
         lambda_max = sum(ws / w for ws, w in zip(weighted_sum, weights) if w != 0) / n if n > 0 else 0.0
-
         # Tính chỉ số nhất quán
         CI = (lambda_max - n) / (n - 1) if n > 1 else 0.0
         RI_dict = {1: 0.0, 2: 0.0, 3: 0.58, 4: 0.90, 5: 1.12, 6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45}
         RI = RI_dict.get(n, 1.49)
+        # Tính chỉ số nhất quán tỷ lệ (Consistency Ratio - CR)
         CR = CI / RI if RI != 0 else 0.0
 
-        # Tính Consistency Vector
+        # Tính vector nhất quán (Consistency vector)
         consistency_vector = [ws / w if w != 0 else 0.0 for ws, w in zip(weighted_sum, weights)]
+        # Tạo dữ liệu chi tiết (consistency_vector_data)
         consistency_vector_data = [
             {
                 "alternative": alt_names[alt_ids[i]],
@@ -604,12 +593,15 @@ def calculate_alternative_scores():
         )
         logger.info(f"Xóa {cursor.rowcount} bản ghi cũ trong consistency_metrics_alternatives")
 
+# nếu CR < 0.1
         if CR < 0.1:
             for comp in comparisons:
+                # Lưu so sánh đôi vào bảng alternative_comparisons
                 cursor.execute(
                     "INSERT INTO alternative_comparisons (customer_id, expert_id, criterion_id, alternative1_id, alternative2_id, value) VALUES (%s, %s, %s, %s, %s, %s)",
                     (customer_id, expert_id, criterion_id, comp['alt1_id'], comp['alt2_id'], comp['value'])
                 )
+                # Lưu chỉ số nhất quán vào bảng consistency_metrics_alternatives
             cursor.execute(
                 "INSERT INTO consistency_metrics_alternatives (customer_id, expert_id, criterion_id, lambda_max, CI, CR) VALUES (%s, %s, %s, %s, %s, %s)",
                 (customer_id, expert_id, criterion_id, float(lambda_max), float(CI), float(CR))
@@ -618,9 +610,10 @@ def calculate_alternative_scores():
 
         cursor.close()
         conn.close()
-
+# Tạo dictionary điểm số (scores) ánh xạ ID của tiêu chí (alt_id) với trọng số (weight) tương ứng.
         scores = {str(alt_id): float(weight) for alt_id, weight in zip(alt_ids, weights)}
 
+#  Trả về phản hồi JSON
         return jsonify({
             "message": "Alternative scores calculated successfully." if CR < 0.1 else "Consistency Ratio (CR) exceeds 10%. Data not saved.",
             "scores": scores,
@@ -777,12 +770,14 @@ def get_consistency_metrics_alternatives():
             conn.close()
         return jsonify({"error": str(e)}), 500
 
+  
 def get_final_alternative_scores():
-    try:
+ try:
         customer_id = request.args.get('customer_id')
         if not customer_id:
-            return jsonify({"error": "customer_id is required"}), 400
-
+            return jsonify({"error": "customer_id là bắt buộc"}), 400
+        
+        # Kết nối cơ sở dữ liệu
         conn = get_db_connection()
         if not conn:
             return jsonify({"error": "Không thể kết nối cơ sở dữ liệu"}), 500
@@ -792,6 +787,8 @@ def get_final_alternative_scores():
         cursor.execute("SELECT id, name FROM alternatives")
         alternatives = cursor.fetchall()
         if not alternatives:
+            cursor.close()
+            conn.close()
             return jsonify({"error": "Không tìm thấy phương án nào trong bảng alternatives"}), 400
         alt_ids = [alt_id for alt_id, _ in alternatives]
         alt_names = {alt_id: name for alt_id, name in alternatives}
@@ -801,6 +798,8 @@ def get_final_alternative_scores():
         criteria = cursor.fetchall()
         criterion_ids = [c_id for c_id, in criteria]
         if not criterion_ids:
+            cursor.close()
+            conn.close()
             return jsonify({"error": "Không tìm thấy tiêu chí nào"}), 400
 
         # Khởi tạo điểm cuối cùng
@@ -813,12 +812,15 @@ def get_final_alternative_scores():
         )
         criteria_weights = {row[0]: float(row[1]) for row in cursor.fetchall()}
         if not criteria_weights:
+            cursor.close()
+            conn.close()
             return jsonify({"error": "Không có trọng số tiêu chí cho customer_id này"}), 400
 
         # Tính điểm cho từng tiêu chí
         for criterion_id in criterion_ids:
+            # Lấy dữ liệu so sánh cặp cho tiêu chí
             cursor.execute("""
-                SELECT alternative1_id, alternative2_id, value, expert_id
+                SELECT alternative1_id, alternative2_id, value
                 FROM alternative_comparisons
                 WHERE customer_id = %s AND criterion_id = %s
             """, (customer_id, criterion_id))
@@ -826,32 +828,27 @@ def get_final_alternative_scores():
 
             if not comparisons:
                 continue
-
-            # Tạo ma trận cho từng chuyên gia
-            expert_matrices = {}
-            for alt1_id, alt2_id, value, expert_id in comparisons:
+            # Tạo ma trận so sánh cho chuyên gia  
+            matrix = [[1.0] * len(alt_ids) for _ in range(len(alt_ids))]
+            for alt1_id, alt2_id, value in comparisons:
                 if alt1_id not in alt_ids or alt2_id not in alt_ids:
                     continue
-                if expert_id not in expert_matrices:
-                    expert_matrices[expert_id] = [[1.0] * len(alt_ids) for _ in range(len(alt_ids))]
                 i = alt_ids.index(alt1_id)
                 j = alt_ids.index(alt2_id)
-                expert_matrices[expert_id][i][j] = float(value)
-                expert_matrices[expert_id][j][i] = 1.0 / float(value)
+                matrix[i][j] = float(value)
+                matrix[j][i] = 1.0 / float(value)
 
-            # Tổng hợp ma trận từ nhiều chuyên gia
-            matrices = list(expert_matrices.values())
-            if matrices:
-                aggregated_matrix = matrix_geometric_mean(matrices)
-                col_sums = matrix_sum_columns(aggregated_matrix)
-                if any(cs == 0 for cs in col_sums):
-                    continue
-                norm_matrix = matrix_normalize(aggregated_matrix, col_sums)
-                scores = matrix_row_means(norm_matrix)
+            # Tính tổng cột
+            col_sums = matrix_sum_columns(matrix)  
+            if any(cs == 0 for cs in col_sums):
+                continue
+            norm_matrix = matrix_normalize(matrix, col_sums)  # Chuẩn hóa ma trận
+            scores = matrix_row_means(norm_matrix)  # Tính điểm số (trung bình hàng)
 
-                weight = criteria_weights.get(criterion_id, 0.0)
-                for i, alt_id in enumerate(alt_ids):
-                    final_scores[alt_id] += float(scores[i]) * weight
+            # Cộng điểm vào điểm số cuối cùng
+            weight = criteria_weights.get(criterion_id, 0.0)
+            for i, alt_id in enumerate(alt_ids):
+                final_scores[alt_id] += float(scores[i]) * weight
 
         # Xóa các bản ghi cũ trong ahp_final_scores
         cursor.execute("DELETE FROM ahp_final_scores WHERE customer_id = %s", (customer_id,))
@@ -880,11 +877,13 @@ def get_final_alternative_scores():
 
         result = [{"alternative_name": row[0], "final_score": float(row[1])} for row in rows]
         return jsonify({"final_scores": result})
-
-    except Exception as e:
+ except Exception as e:
         logger.error(f"Lỗi trong get_final_alternative_scores: {str(e)}")
+        if 'conn' in locals() and conn:
+            conn.rollback()
+            cursor.close()
+            conn.close()
         return jsonify({"error": str(e)}), 500
-
 def get_consistency_vector_data():
     try:
         data = request.get_json()
