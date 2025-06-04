@@ -505,7 +505,7 @@ const ExportPDF = ({
             doc.setFontSize(12);
             doc.setFont(undefined, "bold");
             doc.text(
-              ` CÁC CHỈ SỐ/TỶ SỐ CỦA PHƯƠNG ÁN THEO TIÊU CHÍ: ${criterion.name}`,
+              ` Các chỉ số/tỷ số của phương án theo tiêu chí: ${criterion.name}`,
               20,
               yPosition
             );
