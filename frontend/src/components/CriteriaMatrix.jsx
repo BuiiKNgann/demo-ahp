@@ -597,14 +597,14 @@ const CriteriaMatrix = ({
           {crData && (
             <div className="mt-6">
               <h3 className="text-lg font-medium mb-2">
-                Tính tỷ số nhất quán (Consistency Ratio)
+                {/* Tính tỷ số nhất quán (Consistency Ratio) */}
               </h3>
               <div className="overflow-x-auto">
                 <table className="min-w-full bg-white border border-gray-200 rounded-lg shadow-sm">
                   <thead>
                     <tr className="bg-blue-50 text-gray-700">
                       <th className="py-3 px-6 border-b border-gray-200 text-left font-semibold">
-                        Chỉ số
+                        {/* Chỉ số */} Các chỉ số/tỷ số
                       </th>
                       <th className="py-3 px-6 border-b border-gray-200 text-left font-semibold">
                         Giá trị

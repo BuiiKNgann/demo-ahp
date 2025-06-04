@@ -13,15 +13,13 @@ const ExportPDF = ({
   selectedCustomerIds,
   selectedExpertId,
   disabled,
-  // Add this prop to receive alternative consistency metrics
   alternativeConsistencyMetrics,
 }) => {
   const [exportError, setExportError] = useState(null);
 
-  // Function to create pie chart canvas - FIXED VERSION
   const createPieChart = (data) => {
     const canvas = document.createElement("canvas");
-    canvas.width = 800; // Increased width for better legend display
+    canvas.width = 800;
     canvas.height = 500;
     const ctx = canvas.getContext("2d");
 
@@ -29,7 +27,6 @@ const ExportPDF = ({
     const centerY = 250;
     const radius = 120;
 
-    // Colors for each segment
     const colors = [
       "#007bff", // Blue
       "#17a2b8", // Teal
@@ -41,9 +38,8 @@ const ExportPDF = ({
       "#6c757d", // Gray
     ];
 
-    let currentAngle = -Math.PI / 2; // Start from top
+    let currentAngle = -Math.PI / 2;
 
-    // Validate data
     if (!data || data.length === 0) {
       ctx.fillStyle = "#333";
       ctx.font = "16px sans-serif";
@@ -52,7 +48,6 @@ const ExportPDF = ({
       return canvas;
     }
 
-    // Draw pie segments
     data.forEach((item, index) => {
       const percentage = Number(item.percentage) || 0;
       const sliceAngle = (percentage / 100) * 2 * Math.PI;
@@ -74,7 +69,6 @@ const ExportPDF = ({
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Draw percentage labels on segments with percentage >= 3%
         if (percentage >= 3) {
           const labelAngle = currentAngle + sliceAngle / 2;
           const labelRadius = radius * 0.75;
@@ -96,14 +90,11 @@ const ExportPDF = ({
       }
     });
 
-    // Add title
     ctx.fillStyle = "#333";
     ctx.font = "bold 18px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    // ctx.fillText("Biểu đồ phân bố trọng số tiêu chí", centerX, 20);
 
-    // Add legend on the right side
     const legendX = 450;
     let legendY = 80;
     const legendItemHeight = 25;
@@ -117,14 +108,12 @@ const ExportPDF = ({
     data.forEach((item, index) => {
       const percentage = Number(item.percentage) || 0;
 
-      // Legend color box
       ctx.fillStyle = colors[index % colors.length];
       ctx.fillRect(legendX, legendY - 8, 16, 16);
       ctx.strokeStyle = "#333";
       ctx.lineWidth = 1;
       ctx.strokeRect(legendX, legendY - 8, 16, 16);
 
-      // Legend text with proper formatting
       ctx.fillStyle = "#333";
       ctx.font = "12px Arial";
       ctx.textAlign = "left";
@@ -145,7 +134,6 @@ const ExportPDF = ({
       try {
         console.log("Exporting to PDF...");
 
-        // Validate inputs
         if (!criteria || !Array.isArray(criteria) || criteria.length === 0) {
           throw new Error("Danh sách tiêu chí không hợp lệ.");
         }
@@ -156,11 +144,9 @@ const ExportPDF = ({
           throw new Error("Thiếu thông tin khách hàng hoặc chuyên gia.");
         }
 
-        // Create new PDF document
         const doc = new jsPDF("p", "mm", "a4");
         let yPosition = 20;
 
-        // Add NotoSans font with fallback
         try {
           doc.addFileToVFS("NotoSans-Regular.ttf", notoSansBase64);
           doc.addFont("NotoSans-Regular.ttf", "NotoSans", "normal");
@@ -302,7 +288,7 @@ const ExportPDF = ({
 
         doc.setFontSize(14);
         doc.setFont(undefined, "bold");
-        doc.text("3. TỶ SỐ NHẤT QUÁN CHO TIÊU CHÍ", 20, yPosition);
+        doc.text("3. CHỈ SỐ/TỶ SỐ CỦA TIÊU CHÍ", 20, yPosition);
         yPosition += 10;
 
         const consistencyMetricsData = [
@@ -312,7 +298,7 @@ const ExportPDF = ({
         ];
 
         doc.autoTable({
-          head: [["Chỉ số", "Giá trị"]],
+          head: [["Chỉ số/Tỷ số", "Giá trị"]],
           body: consistencyMetricsData,
           startY: yPosition,
           styles: {
@@ -459,7 +445,7 @@ const ExportPDF = ({
             doc.text(
               `5.${
                 criteria.indexOf(criterion) + 1
-              }. Ma trận so sánh theo tiêu chí: ${criterion.name}`,
+              }. MA TRẬN SO SÁNH THEO TIÊU CHÍ: ${criterion.name}`,
               20,
               yPosition
             );
@@ -519,7 +505,7 @@ const ExportPDF = ({
             doc.setFontSize(12);
             doc.setFont(undefined, "bold");
             doc.text(
-              `Tỷ số nhất quán cho phương án - ${criterion.name}`,
+              ` CÁC CHỈ SỐ/TỶ SỐ CỦA PHƯƠNG ÁN THEO TIÊU CHÍ: ${criterion.name}`,
               20,
               yPosition
             );
@@ -647,7 +633,7 @@ const ExportPDF = ({
 
         doc.setFontSize(14);
         doc.setFont(undefined, "bold");
-        doc.text("7. TỔNG HỢP TỶ SỐ NHẤT QUÁN CÁC PHƯƠNG ÁN", 20, yPosition);
+        doc.text("7. TỔNG HỢP CÁC CHỈ SỐ/TỶ SỐ CÁC PHƯƠNG ÁN", 20, yPosition);
         yPosition += 10;
 
         const summaryConsistencyData = criteria.map((criterion) => {

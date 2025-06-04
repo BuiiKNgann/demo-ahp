@@ -535,13 +535,13 @@ const AlternativeMatrix = ({
           {/* New Section: Consistency Ratio Report Like the Image */}
           <div className="mt-6 bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
             <h4 className="text-md font-semibold text-gray-800 mb-3">
-              Tình tỷ số nhất quán (Consistency Ratio)
+              {/* Tình tỷ số nhất quán (Consistency Ratio) */}
             </h4>
             <table className="w-full text-sm text-gray-700">
               <thead>
                 <tr className="bg-blue-50">
                   <th className="py-2 px-4 text-left font-medium border-b border-gray-200">
-                    Chỉ số
+                    Các chỉ số/tỷ số
                   </th>
                   <th className="py-2 px-4 text-right font-medium border-b border-gray-200">
                     Giá trị
