@@ -397,7 +397,7 @@ def calculate_criteria_weights():
 
         if CR > 0.1:
             return jsonify({
-                "message": "Tỷ số nhất quán (CR) vượt quá 10%. Dữ liệu không được lưu.",
+                "message": "Tỷ số nhất quán (CR) vượt quá 10%.",
                 "normalized_matrix": [[float(x) for x in row] for row in normalized_matrix],
                 "weights": {f"C{i+1}": float(w) for i, w in enumerate(weights)},
                 "CR": float(CR),
