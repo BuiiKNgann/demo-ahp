@@ -234,7 +234,7 @@ const CriteriaMatrix = ({
 
       try {
         await saveCriteriaMatrix(matrix, customerId, expertId);
-        setSuccessMessage("Lưu ma trận và tính toán trọng số thành công!");
+        setSuccessMessage("Tính toán trọng số thành công!");
       } catch (saveErr) {
         setError("Lưu ma trận thất bại: " + saveErr.message);
       }
